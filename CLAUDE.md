@@ -4,178 +4,215 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This repository contains PostgreSQL configuration automation tools for IBP (International Business Platform). It provides three different implementation methods:
+PostgreSQL configuration automation for Ubuntu 22.04 with three implementation methods:
+- **bash/** - Modular shell scripts with library-based architecture
+- **ansible/** - Infrastructure as Code with role-based playbooks
+- **salt/** - Configuration management with state files and pillar data
 
-1. **Bash Scripts** - Standalone shell scripts with modular library structure
-2. **Ansible Playbooks** - Infrastructure as code using Ansible roles and playbooks
-3. **Salt States** - Configuration management using SaltStack
+All three methods configure identical PostgreSQL settings, system tuning, and optional NVME storage.
 
-## Repository Information
+## Repository
 
-- **Repository**: https://github.com/work-obs/ibp_config
-- **Organization**: work-obs
-- **Access**: Public repository
-- **Primary Account**: bkahlerventer
+- **URL**: https://github.com/work-obs/ibp_config
+- **Account**: bkahlerventer
+- **Git Automation**: ENABLED - Auto-commit and push after tasks complete
 
-## Git Workflow Automation
+## Architecture
 
-This project uses **permanent git automation** for streamlined development workflow.
+### Bash Implementation (bash/)
 
-### Automated Git Operations
-
-After completing tasks, Claude Code will automatically:
-
-1. **Stage changes**: `git add .` (or specific files as appropriate)
-2. **Create commit**: With descriptive message following the format:
-   ```
-   [Claude Code] Brief summary of changes
-
-   - Detailed change 1
-   - Detailed change 2
-   - Detailed change 3
-
-   🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
-   Co-Authored-By: Claude <noreply@anthropic.com>
-   ```
-3. **Push to remote**: `git push origin <current-branch>`
-4. **Verify push**: Confirm successful push to remote repository
-
-### Manual Git Operations
-
-You can still perform manual git operations:
-- `git status` - Check working directory status
-- `git log` - View commit history
-- `git diff` - View changes
-- `git branch` - Manage branches
-- `git pull` - Pull latest changes
-
-### Branch Strategy
-
-- **master** - Main branch for stable releases
-- Feature branches - For development work (create as needed)
-
-### GitHub CLI Integration
-
-The repository is integrated with GitHub CLI (`gh`) for enhanced workflow:
-- Create pull requests: `gh pr create`
-- View issues: `gh issue list`
-- View repository: `gh repo view work-obs/ibp_config`
-
-## Project Structure
+**Modular library pattern** where each library handles one configuration aspect:
 
 ```
-ibp_config/
-├── bash/                    # Bash script implementation
-│   ├── lib/                # Modular libraries
-│   └── postgresql-config.sh # Main driver script
-├── ansible/                # Ansible implementation
-│   ├── roles/              # Ansible roles
-│   ├── playbooks/          # Main playbooks
-│   └── inventory/          # Inventory files
-├── salt/                   # Salt implementation
-│   ├── salt/               # State files
-│   ├── pillar/             # Pillar data
-│   └── orchestrate/        # Orchestration files
-└── README.md              # Main documentation
-
+configure_postgresql.sh (main driver)
+  ├── lib/variables.sh        # Calculate memory/CPU-based values
+  ├── lib/apt_pgdg.sh        # PGDG repository setup
+  ├── lib/postgresql_conf.sh # PostgreSQL configuration
+  ├── lib/pg_hba_conf.sh     # Authentication rules
+  ├── lib/backup.sh          # Backup script + cron
+  ├── lib/sysctl_conf.sh     # Kernel parameters
+  ├── lib/gai_conf.sh        # IPv6 precedence
+  ├── lib/netplan_conf.sh    # Network link-local disable
+  ├── lib/limits_conf.sh     # File/memory limits
+  ├── lib/pam_conf.sh        # PAM session limits
+  ├── lib/nvme_conf.sh       # Optional NVME setup
+  └── lib/custom_sql.sh      # Execute custom SQL scripts
 ```
 
-## Development Commands
+**Key pattern**: `configure_postgresql.sh` sources all libraries, calculates variables once via `init_variables()`, then calls library functions sequentially. Each library function is idempotent and checks prerequisites.
 
-### Testing Scripts
+### Ansible Implementation (ansible/)
+
+**Role-based architecture** with single playbook orchestration:
+
+```
+configure_postgresql.yml (main playbook)
+  ├── vars.yml                          # Variables file
+  ├── roles/pgdg_repository/            # PGDG setup
+  ├── roles/postgresql_install/         # Package installation
+  ├── roles/system_tuning/              # sysctl, limits, PAM, GAI, netplan
+  ├── roles/postgresql_config/          # PostgreSQL conf + backup
+  └── roles/nvme_config/                # Optional NVME (conditional)
+```
+
+**Key pattern**: Each role has `tasks/main.yml` with tags, `defaults/main.yml` for variables, and optional `handlers/main.yml`. Variables are calculated using Jinja2 filters in templates. Roles use `when:` conditions for optional tasks.
+
+### Salt Implementation (salt/)
+
+**State-based configuration management**:
+
+```
+top.sls (state orchestration)
+  ├── pillar/postgresql.sls             # Variables/configuration data
+  ├── states/pgdg_repository/init.sls   # PGDG setup
+  ├── states/postgresql_install/init.sls# Package installation
+  ├── states/system_tuning/init.sls     # System configuration
+  ├── states/postgresql_config/init.sls # PostgreSQL configuration
+  └── states/nvme_config/init.sls       # Optional NVME (conditional)
+```
+
+**Key pattern**: States use Jinja2 templating with pillar data. State IDs are unique across all states. Requirements enforce ordering. Optional states use `{% if %}` conditions from pillar data.
+
+### Variable Calculation Logic
+
+All implementations calculate these values from system resources:
+
+```python
+memory_bytes = /proc/meminfo MemTotal * 1024
+half_memory_gb = max(1, (memory_bytes / 1GB) / 2)
+shared_buffers = max(1, memory_bytes / 8 / 1GB)
+effective_cache_size = half_memory_gb - shared_buffers
+cpu_cores = nproc
+workers = max(1, cpu_cores / 2)
+other_workers = max(1, cpu_cores / 4)
+nr_hugepages = (memory_bytes / 2MB) / 2
+```
+
+These variables drive PostgreSQL memory settings and worker processes.
+
+## Commands
+
+### Bash Execution
 
 ```bash
-# Test bash script (dry-run)
-cd bash
-./postgresql-config.sh --dry-run
+# Required: PostgreSQL version
+sudo bash/configure_postgresql.sh --version 14
 
-# Test Ansible playbook
-cd ansible
-ansible-playbook -i inventory/hosts playbooks/postgresql-setup.yml --check
+# With custom SQL scripts
+sudo bash/configure_postgresql.sh --version 14 \
+  --sql-scripts "/path/to/init.sql,/path/to/users.sql"
 
-# Test Salt states
-cd salt
-salt-call --local state.apply postgresql --test
+# With NVME support (requires /mnt/nvme mounted)
+sudo bash/configure_postgresql.sh --version 14 --enable-nvme
+
+# Using environment variables
+export POSTGRESQL_VERSION=14
+export ENABLE_NVME=true
+export CUSTOM_SQL_SCRIPTS="/path/to/script1.sql,/path/to/script2.sql"
+sudo bash/configure_postgresql.sh
 ```
 
-### Running Implementations
+### Ansible Execution
 
 ```bash
-# Run bash script
-cd bash
-sudo ./postgresql-config.sh
-
-# Run Ansible playbook
 cd ansible
-ansible-playbook -i inventory/hosts playbooks/postgresql-setup.yml
 
-# Apply Salt states
-cd salt
-salt-call --local state.apply postgresql
+# Edit vars.yml first to set postgresql_version
+ansible-playbook configure_postgresql.yml
+
+# Check mode (dry run)
+ansible-playbook configure_postgresql.yml --check
+
+# Run specific tags
+ansible-playbook configure_postgresql.yml --tags setup      # repo + install
+ansible-playbook configure_postgresql.yml --tags tuning     # system tuning
+ansible-playbook configure_postgresql.yml --tags config     # postgresql conf
+ansible-playbook configure_postgresql.yml --tags nvme       # nvme setup
+
+# Limit to specific hosts
+ansible-playbook configure_postgresql.yml --limit db1.example.com
 ```
 
-## Key Features
+### Salt Execution
 
-All three implementations provide:
-- Dynamic resource calculation based on system memory and CPU cores
-- PostgreSQL optimization (shared_buffers, work_mem, WAL settings, etc.)
-- System tuning (kernel parameters, limits, network configuration)
-- Automated backup script generation with cron scheduling
-- Optional NVMe storage configuration
-- Custom SQL script execution support
+```bash
+# Edit /etc/salt/master file_roots and pillar_roots first
+# Edit salt/pillar/postgresql.sls to set postgresql_version
 
-## Configuration
+# Apply all states
+sudo salt '*' state.apply
 
-### Variables and Parameters
+# Apply specific states
+sudo salt '*' state.apply pgdg_repository
+sudo salt '*' state.apply postgresql_install
+sudo salt '*' state.apply system_tuning
+sudo salt '*' state.apply postgresql_config
+sudo salt '*' state.apply nvme_config
 
-Each implementation uses variables for customization:
-- **Memory allocation**: Calculated from system resources
-- **Worker processes**: Based on CPU core count
-- **Storage paths**: Configurable for data, WAL, and backups
-- **Network settings**: Hostname, ports, connection limits
-- **Backup settings**: Schedule, retention, destination
+# Test mode (dry run)
+sudo salt '*' state.apply test=True
 
-### Customization
+# Highstate
+sudo salt '*' state.highstate
+```
 
-- **Bash**: Edit variables in `postgresql-config.sh` or `lib/variables.sh`
-- **Ansible**: Modify `inventory/group_vars/all.yml` or `playbooks/postgresql-setup.yml`
-- **Salt**: Update pillar data in `pillar/postgresql.sls`
+## Development Guidelines
 
-## Security Considerations
+### When Modifying Configuration
 
-- Run with appropriate privileges (sudo/root for system changes)
-- Review generated configurations before production deployment
-- Secure backup destinations with proper permissions
-- Use encrypted connections for PostgreSQL (SSL/TLS)
-- Review and adjust `pg_hba.conf` for access control
-- Store sensitive credentials securely (not in version control)
+All three implementations must stay synchronized. If changing a PostgreSQL setting:
 
-## Documentation
+1. Update `bash/lib/postgresql_conf.sh`
+2. Update `ansible/roles/postgresql_config/tasks/main.yml` (or template)
+3. Update `salt/states/postgresql_config/init.sls` (or template)
 
-- **Main README**: Comprehensive usage instructions in `README.md`
-- **Bash README**: Specific to bash implementation in `bash/README.md`
-- **Ansible README**: Specific to Ansible in `ansible/README.md`
-- **Salt README**: Specific to Salt in `salt/README.md`
+### Parameter Handling
 
-## Development Notes
+All implementations support three sources (priority order):
+1. Command-line arguments (Bash) / Playbook vars (Ansible) / Pillar (Salt)
+2. Environment variables (Bash only)
+3. Defaults (if specified)
 
-- This is an infrastructure automation project, not a web application
-- Focus on idempotency and repeatability
-- Test in non-production environments first
-- Follow infrastructure as code best practices
-- Document any configuration changes
-- Use descriptive commit messages
+**Required**: `postgresql_version` - Must fail if not provided
+**Optional**: `custom_sql_scripts` (default: empty), `enable_nvme` (default: false)
 
-## Support and Issues
+### NVME Configuration
 
-For bugs, feature requests, or questions:
-- Create an issue in the GitHub repository
-- Use the GitHub Discussions feature
-- Contact the repository maintainers
+Only applied if ALL conditions met:
+- `/mnt/nvme` exists
+- `/mnt/nvme` is a mount point (`mountpoint -q /mnt/nvme`)
+- `/mnt/nvme` is currently mounted
 
----
+Creates temporary tablespace on NVME with systemd hooks for persistence.
 
-**Last Updated**: 2025-10-21
-**Maintained By**: work-obs organization
-**License**: (Add license information if applicable)
+### Testing
+
+```bash
+# Bash: Add echo statements to library functions for debugging
+# Ansible: Use --check mode and -v/-vv/-vvv for verbosity
+# Salt: Use test=True mode and state.show_sls to preview
+
+# Verify PostgreSQL after configuration
+sudo -u postgres psql -c "SELECT version();"
+sudo -u postgres psql -c "SHOW shared_buffers;"
+sudo -u postgres psql -c "SHOW max_worker_processes;"
+```
+
+## Critical Files Modified
+
+These files are overwritten/modified by all implementations:
+- `/etc/apt/preferences.d/pgdg` - PGDG repository priority
+- `/etc/postgresql/${version}/main/postgresql.conf` - Main config
+- `/etc/postgresql/${version}/main/pg_hba.conf` - Auth (sets to `trust` for local)
+- `/var/lib/postgresql/backup.sh` - Backup script (runs every 6 hours via cron)
+- `/etc/sysctl.d/99-ibp.conf` - Kernel parameters (requires reboot)
+- `/etc/security/limits.d/ibp.conf` - File/memory limits
+- `/etc/pam.d/common-session*` - PAM limits integration
+- `/etc/gai.conf` - IPv6 precedence
+- `/etc/netplan/*.yaml` - Network link-local disabled
+
+**Security warning**: `pg_hba.conf` is configured with `trust` authentication for local connections. Change to `scram-sha-256` or `md5` for production.
+
+## Source Reference
+
+The original requirements are in `Prompt.md` - this documents the variable calculations, configuration files, and expected behavior. Use this as the source of truth when understanding "why" certain values are calculated or configurations are applied.
