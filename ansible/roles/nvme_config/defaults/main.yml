@@ -1,0 +1,4 @@
+---
+# Default variables for nvme_config role
+
+enable_nvme: false

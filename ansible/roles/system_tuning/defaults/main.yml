@@ -1,0 +1,6 @@
+---
+# Default variables for system_tuning role
+
+# These will be calculated based on system resources
+memory_bytes: "{{ ansible_memtotal_mb * 1024 * 1024 }}"
+nr_hugepages: "{{ ((ansible_memtotal_mb * 1024 * 1024 / 2000000) / 2) | int }}"

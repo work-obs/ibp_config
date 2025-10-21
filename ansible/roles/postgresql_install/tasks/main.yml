@@ -1,0 +1,21 @@
+---
+# Install PostgreSQL
+
+- name: Fail if postgresql_version is not defined
+  ansible.builtin.fail:
+    msg: "postgresql_version must be defined"
+  when: postgresql_version == ""
+
+- name: Install PostgreSQL {{ postgresql_version }}
+  ansible.builtin.apt:
+    name:
+      - "postgresql-{{ postgresql_version }}"
+      - "postgresql-client-{{ postgresql_version }}"
+      - "postgresql-contrib-{{ postgresql_version }}"
+    state: present
+    update_cache: yes
+
+- name: Ensure PostgreSQL service is enabled
+  ansible.builtin.systemd:
+    name: postgresql
+    enabled: yes

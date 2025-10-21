@@ -1,0 +1,121 @@
+---
+# Configure PostgreSQL
+
+- name: Fail if postgresql_version is not defined
+  ansible.builtin.fail:
+    msg: "postgresql_version must be defined"
+  when: postgresql_version == ""
+
+- name: Create PostgreSQL directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: '0700'
+  loop:
+    - "/var/lib/postgresql/{{ postgresql_version }}_wal_archive"
+    - /var/log/postgresql
+
+- name: Stop PostgreSQL for configuration
+  ansible.builtin.systemd:
+    name: postgresql
+    state: stopped
+
+- name: Reset WAL segment size to 64MB
+  ansible.builtin.shell:
+    cmd: >
+      sudo -u postgres /usr/lib/postgresql/{{ postgresql_version }}/bin/pg_resetwal
+      -D /var/lib/postgresql/{{ postgresql_version }}/main --wal-segsize 64
+  ignore_errors: yes
+
+- name: Backup postgresql.conf
+  ansible.builtin.copy:
+    src: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+    dest: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf.backup.{{ ansible_date_time.epoch }}"
+    remote_src: yes
+
+- name: Configure postgresql.conf settings
+  ansible.builtin.lineinfile:
+    path: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+    regexp: "^#*{{ item.key }}"
+    line: "{{ item.key }} = {{ item.value }}"
+    state: present
+  loop:
+    - { key: "shared_buffers", value: "{{ shared_buffers_gb }}GB" }
+    - { key: "effective_cache_size", value: "{{ effective_cache_size_gb }}GB" }
+    - { key: "maintenance_work_mem", value: "{{ (shared_buffers_gb | int * 1024 / 16) | int }}MB" }
+    - { key: "work_mem", value: "{{ ((shared_buffers_gb | int * 1024) / (workers | int * 4)) | int }}MB" }
+    - { key: "max_worker_processes", value: "{{ workers }}" }
+    - { key: "max_parallel_workers_per_gather", value: "{{ other_workers }}" }
+    - { key: "max_parallel_workers", value: "{{ workers }}" }
+    - { key: "max_parallel_maintenance_workers", value: "{{ other_workers }}" }
+    - { key: "wal_buffers", value: "16MB" }
+    - { key: "min_wal_size", value: "1GB" }
+    - { key: "max_wal_size", value: "4GB" }
+    - { key: "wal_compression", value: "on" }
+    - { key: "archive_mode", value: "on" }
+    - { key: "archive_command", value: "'gzip < %p > /var/lib/postgresql/{{ postgresql_version }}_wal_archive/%f.gz'" }
+    - { key: "wal_keep_size", value: "1GB" }
+    - { key: "checkpoint_completion_target", value: "0.9" }
+    - { key: "checkpoint_timeout", value: "15min" }
+    - { key: "max_connections", value: "200" }
+    - { key: "superuser_reserved_connections", value: "3" }
+    - { key: "logging_collector", value: "on" }
+    - { key: "log_directory", value: "'/var/log/postgresql'" }
+    - { key: "log_filename", value: "'postgresql-%Y-%m-%d_%H%M%S.log'" }
+    - { key: "log_rotation_age", value: "1d" }
+    - { key: "log_rotation_size", value: "100MB" }
+    - { key: "log_line_prefix", value: "'%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h '" }
+    - { key: "log_checkpoints", value: "on" }
+    - { key: "log_connections", value: "on" }
+    - { key: "log_disconnections", value: "on" }
+    - { key: "log_lock_waits", value: "on" }
+    - { key: "log_temp_files", value: "0" }
+    - { key: "effective_io_concurrency", value: "200" }
+    - { key: "random_page_cost", value: "1.1" }
+    - { key: "default_statistics_target", value: "100" }
+    - { key: "huge_pages", value: "try" }
+
+- name: Backup pg_hba.conf
+  ansible.builtin.copy:
+    src: "/etc/postgresql/{{ postgresql_version }}/main/pg_hba.conf"
+    dest: "/etc/postgresql/{{ postgresql_version }}/main/pg_hba.conf.backup.{{ ansible_date_time.epoch }}"
+    remote_src: yes
+
+- name: Configure pg_hba.conf for trust authentication
+  ansible.builtin.template:
+    src: pg_hba.conf.j2
+    dest: "/etc/postgresql/{{ postgresql_version }}/main/pg_hba.conf"
+    owner: postgres
+    group: postgres
+    mode: '0640'
+
+- name: Create backup script
+  ansible.builtin.copy:
+    src: backup.sh
+    dest: /var/lib/postgresql/backup.sh
+    owner: postgres
+    group: postgres
+    mode: '0755'
+
+- name: Schedule backup script in crontab
+  ansible.builtin.cron:
+    name: "PostgreSQL backup"
+    user: postgres
+    minute: "0"
+    hour: "2,8,14,20"
+    job: "/var/lib/postgresql/backup.sh >/dev/null 2>&1"
+    state: present
+
+- name: Start PostgreSQL
+  ansible.builtin.systemd:
+    name: postgresql
+    state: started
+    enabled: yes
+
+- name: Execute custom SQL scripts
+  ansible.builtin.shell:
+    cmd: "sudo -u postgres psql -f {{ item }}"
+  loop: "{{ custom_sql_scripts }}"
+  when: custom_sql_scripts | length > 0

@@ -1,0 +1,63 @@
+---
+# PostgreSQL Configuration Playbook for Ubuntu 22.04
+# This playbook configures PostgreSQL database server with optimized settings
+
+- name: Configure PostgreSQL on Ubuntu 22.04
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  vars_files:
+    - vars.yml
+
+  pre_tasks:
+    - name: Validate postgresql_version is defined
+      ansible.builtin.fail:
+        msg: "postgresql_version must be defined in vars.yml"
+      when: postgresql_version is not defined or postgresql_version == ""
+
+    - name: Display configuration summary
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          PostgreSQL Configuration
+          ============================================
+          PostgreSQL Version: {{ postgresql_version }}
+          Enable NVME: {{ enable_nvme | default(false) }}
+          Total Memory: {{ ansible_memtotal_mb }} MB
+          CPU Cores: {{ ansible_processor_vcpus }}
+          ============================================
+
+  roles:
+    - role: pgdg_repository
+      tags: ['repository', 'setup']
+
+    - role: postgresql_install
+      tags: ['install', 'setup']
+
+    - role: system_tuning
+      tags: ['tuning', 'system']
+
+    - role: postgresql_config
+      tags: ['config', 'postgresql']
+
+    - role: nvme_config
+      when: enable_nvme | default(false) | bool
+      tags: ['nvme', 'optional']
+
+  post_tasks:
+    - name: Display completion message
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          PostgreSQL Configuration Complete!
+          ============================================
+
+          Next steps:
+            1. Review configuration files
+            2. Test PostgreSQL connection:
+               sudo -u postgres psql
+            3. Reboot system to apply all kernel parameters:
+               sudo reboot
+
+          ============================================

@@ -1,0 +1,5 @@
+---
+# Default variables for postgresql_install role
+
+# PostgreSQL version to install (must be provided)
+postgresql_version: ""

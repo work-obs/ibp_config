@@ -1,0 +1,17 @@
+---
+# Default variables for postgresql_config role
+
+postgresql_version: ""
+
+# Calculate memory-based values
+total_memory_gb: "{{ (ansible_memtotal_mb / 1024) | int }}"
+half_memory_gb: "{{ [(total_memory_gb / 2) | int, 1] | max }}"
+shared_buffers_gb: "{{ [(total_memory_gb / 8) | int, 1] | max }}"
+effective_cache_size_gb: "{{ [(half_memory_gb | int) - (shared_buffers_gb | int), 1] | max }}"
+
+# Calculate worker values
+workers: "{{ [(ansible_processor_vcpus / 2) | int, 1] | max }}"
+other_workers: "{{ [(ansible_processor_vcpus / 4) | int, 1] | max }}"
+
+# Custom SQL scripts (optional)
+custom_sql_scripts: []
