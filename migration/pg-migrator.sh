@@ -367,14 +367,14 @@ function transfer_to_destination() {
 
   info "Pulling files from source to jumpbox..."
   mkdir -p /tmp/pg_transfer
-  rsync -az --relative --progress -e "ssh -q" "${SOURCE_SSH_USER}@${SOURCE_HOST}:${BACKUP_DIR}/pg_dumps.tar.gz" \
+  rsync -az --progress -e "ssh -q" "${SOURCE_SSH_USER}@${SOURCE_HOST}:${BACKUP_DIR}/pg_dumps.tar.gz" \
     "${SOURCE_SSH_USER}@${SOURCE_HOST}:${BACKUP_DIR}/checksums.txt" /tmp/pg_transfer/ || {
     error "Failed to pull from source"
     return 1
   }
 
   info "Pushing files from jumpbox to destination..."
-  rsync -az --relative --progress -e "ssh -q" /tmp/pg_transfer/pg_dumps.tar.gz /tmp/pg_transfer/checksums.txt \
+  rsync -az --progress -e "ssh -q" /tmp/pg_transfer/pg_dumps.tar.gz /tmp/pg_transfer/checksums.txt \
     "${DEST_SSH_USER}@${DEST_HOST}:${BACKUP_DIR}/" || {
     error "Failed to push to destination"
     return 1
@@ -581,35 +581,39 @@ function update_host_key() {
 }
 
 function backup_server_files() {
-  info "Backing up server files from source to jumpbox..."
+  info "Backing up server files on source..."
 
-  info "Creating server files backup directory on jumpbox..."
+  info "Creating server files backup directory on source..."
+  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
+
   mkdir -p "${SERVER_FILES_BACKUP_DIR}" || {
     error "Failed to create server files backup directory"
     return 1
   }
 
   info "Copying /opt/* from source..."
-  rsync -avPHz --relative "${SOURCE_SSH_USER}@${SOURCE_HOST}:/opt/*" "${SERVER_FILES_BACKUP_DIR}/" || {
+  rsync -avPHz --relative /opt/ "${SERVER_FILES_BACKUP_DIR}/" || {
     warn "Failed to copy /opt/* (may not exist or be empty)"
   }
 
   info "Copying /etc/default/jetty from source..."
-  rsync -avPHz --relative "${SOURCE_SSH_USER}@${SOURCE_HOST}:/etc/default/jetty" "${SERVER_FILES_BACKUP_DIR}/" || {
+  rsync -avPHz --relative /etc/default/jetty "${SERVER_FILES_BACKUP_DIR}/" || {
     warn "Failed to copy /etc/default/jetty (may not exist)"
   }
 
   info "Copying /home/smoothie/Scripts/* from source..."
-  rsync -avPHz --relative "${SOURCE_SSH_USER}@${SOURCE_HOST}:/home/smoothie/Scripts/*" "${SERVER_FILES_BACKUP_DIR}/" || {
+  rsync -avPHz --relative /home/smoothie/Scripts/ "${SERVER_FILES_BACKUP_DIR}/" || {
     warn "Failed to copy /home/smoothie/Scripts/* (may not exist or be empty)"
   }
 
   info "Copying SSH host keys from source..."
-  rsync -avPHz --relative "${SOURCE_SSH_USER}@${SOURCE_HOST}:/etc/ssh/ssh_host*" "${SERVER_FILES_BACKUP_DIR}/" || {
+  rsync -avPHz --relative /etc/ssh/ssh_host* "${SERVER_FILES_BACKUP_DIR}/" || {
     warn "Failed to copy SSH host keys (may not have permissions)"
   }
 
   success "Server files backup completed. Files stored in: ${SERVER_FILES_BACKUP_DIR}"
+
+ENDSSH
 }
 
 function restore_server_files() {
@@ -663,23 +667,6 @@ ENDSSH
 function rename_smoothie_folder() {
   info "Renaming smoothie11 folder on destination..."
 
-  info "Checking if /opt/smoothie11 exists on destination..."
-  if ! ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "test -d /opt/smoothie11"; then
-    warn "/opt/smoothie11 does not exist on destination"
-    return 0
-  fi
-
-  info "Checking if /opt/smoothie11_old already exists..."
-  if ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "test -d /opt/smoothie11_old"; then
-    warn "/opt/smoothie11_old already exists on destination"
-    info "Removing existing /opt/smoothie11_old..."
-    ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo rm -rf /opt/smoothie11_old" || {
-      error "Failed to remove existing /opt/smoothie11_old"
-      return 1
-    }
-    success "Existing /opt/smoothie11_old removed"
-  fi
-
   info "Renaming /opt/smoothie11 to /opt/smoothie11_old..."
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo mv /opt/smoothie11 /opt/smoothie11_old" || {
     error "Failed to rename /opt/smoothie11 to /opt/smoothie11_old"
@@ -701,11 +688,11 @@ function setup_bi_cube() {
   success "/etc/profile.d/ibp.sh found on source - proceeding with bi_cube setup"
 
   info "Backing up bi_cube files from source..."
-  rsync -avPHz --relative "${SOURCE_SSH_USER}@${SOURCE_HOST}:/home/smoothie/bi_cube*" "${SERVER_FILES_BACKUP_DIR}/" || {
+  rsync -avPHz --relative /home/smoothie/bi_cube* "${SERVER_FILES_BACKUP_DIR}/" || {
     warn "Failed to copy bi_cube files from /home/smoothie/ (may not exist)"
   }
 
-  rsync -avPHz --relative "${SOURCE_SSH_USER}@${SOURCE_HOST}:/etc/profile.d/ibp*" "${SERVER_FILES_BACKUP_DIR}/" || {
+  rsync -avPHz --relative /etc/profile.d/ibp* "${SERVER_FILES_BACKUP_DIR}/" || {
     warn "Failed to copy ibp files from /etc/profile.d/ (may not exist)"
   }
 
