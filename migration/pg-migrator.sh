@@ -848,10 +848,10 @@ function full_migration() {
   source_stopdw || return 1
   dest_stopdw || return 1
 
-  backup_server_files || return 1
   set_maintenance_settings || return 1
   export_globals || return 1
   dump_databases || return 1
+  backup_server_files || return 1
   create_archive || return 1
   generate_checksums || return 1
   transfer_to_destination || return 1
@@ -859,7 +859,6 @@ function full_migration() {
   extract_archive || return 1
   restore_globals || return 1
   restore_databases || return 1
-  restore_server_files || return 1
   run_analyze || return 1
   run_vacuum || return 1
   run_reindex || return 1
@@ -867,6 +866,10 @@ function full_migration() {
   validate_constraints || return 1
   validate_extensions || return 1
   revert_maintenance_settings || return 1
+  rename_smoothie_folder || return 1
+  restore_server_files || return 1
+  setup_bi_cube || return 1
+  sync_timezone || return 1
   display_summary_dest || return 1
 
   dest_startdw || return 1
