@@ -696,20 +696,20 @@ function setup_bi_cube() {
     warn "Failed to copy ibp files from /etc/profile.d/ (may not exist)"
   }
 
-  success "bi_cube files backed up to jumpbox"
+  success "bi_cube files backed up on source"
 
-  info "Transferring bi_cube files to destination..."
-  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo mkdir -p ${SERVER_FILES_BACKUP_DIR}" || {
-    error "Failed to create backup directory on destination"
-    return 1
-  }
+#  info "Transferring bi_cube files to destination..."
+#  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo mkdir -p ${SERVER_FILES_BACKUP_DIR}" || {
+#    error "Failed to create backup directory on destination"
+#    return 1
+#  }
 
-  rsync -avPHz --relative "${SERVER_FILES_BACKUP_DIR}/"* "${DEST_SSH_USER}@${DEST_HOST}:${SERVER_FILES_BACKUP_DIR}/" || {
-    error "Failed to transfer bi_cube files to destination"
-    return 1
-  }
-
-  success "bi_cube files transferred to destination"
+#  rsync -avPHz --relative "${SERVER_FILES_BACKUP_DIR}/"* "${DEST_SSH_USER}@${DEST_HOST}:${SERVER_FILES_BACKUP_DIR}/" || {
+#    error "Failed to transfer bi_cube files to destination"
+#    return 1
+#  }
+#
+#  success "bi_cube files transferred to destination"
 
   info "Setting ownership on destination..."
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<'ENDSSH'
@@ -757,7 +757,7 @@ ENDSSH
     sudo python3 -m venv /opt/bi_cube_ip_whitelist/ || exit 1
 
     # Install packages
-    sudo /opt/bi_cube_ip_whitelist/bin/pip install boto3 mysql-connector-python psycopg2-binary privatebinapi || exit 1
+    sudo -u root "/opt/bi_cube_ip_whitelist/bin/pip install boto3 mysql-connector-python psycopg2-binary privatebinapi" || exit 1
 ENDSSH
 
   if [[ $? -ne 0 ]]; then
