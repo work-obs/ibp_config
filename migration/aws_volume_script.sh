@@ -1,214 +1,159 @@
 #!/bin/bash
 
-# Script: create-volumes-from-ami.sh
-# Description: Creates AWS volumes from an AMI golden image for multiple instances
-# Usage: ./create-volumes-from-ami.sh <AMI_ID> <instance-names-file>
+# Script to create AWS volumes from AMI golden image
+# Usage: ./create-volumes-from-ami.sh <AMI_ID>
 
 set -e
 
-# Color codes for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
-# Function to print colored messages
-log_info() {
-    echo -e "${GREEN}[INFO]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
-
-# Check if required arguments are provided
-if [ $# -lt 1 ]; then
-    log_error "Usage: $0 <AMI_ID> [instance-names-file]"
-    log_error "Example: $0 ami-0abcdef1234567890 instance-names.sh"
+# Check if AMI ID is provided
+if [ $# -ne 1 ]; then
+    echo "Usage: $0 <AMI_ID>"
+    echo "Example: $0 ami-0123456789abcdef0"
     exit 1
 fi
 
 AMI_ID=$1
-INSTANCE_FILE=${2:-"instance-names.sh"}
-
-# Validate AMI ID format
-if [[ ! $AMI_ID =~ ^ami-[a-f0-9]{8,17}$ ]]; then
-    log_error "Invalid AMI ID format: $AMI_ID"
-    exit 1
-fi
+INSTANCE_FILE="instance-names.sh"
 
 # Check if instance names file exists
 if [ ! -f "$INSTANCE_FILE" ]; then
-    log_error "Instance names file not found: $INSTANCE_FILE"
+    echo "Error: $INSTANCE_FILE not found!"
     exit 1
 fi
-
-log_info "Starting volume creation process..."
-log_info "AMI ID: $AMI_ID"
-log_info "Instance file: $INSTANCE_FILE"
 
 # Source the instance names file
 source "$INSTANCE_FILE"
 
-# Verify INSTANCES array is populated
-if [ ${#INSTANCES[@]} -eq 0 ]; then
-    log_error "No instances found in $INSTANCE_FILE"
-    exit 1
-fi
+echo "Creating volumes from AMI: $AMI_ID"
+echo "Processing ${#INSTANCES[@]} instances..."
+echo ""
 
-# Function to get AMI details
-get_ami_details() {
+# Function to get tags from an existing instance
+get_instance_tags() {
+    local instance_name=$1
+    local zone=$2
+    local region=${zone%?}  # Remove last character to get region from zone
+    
+    # Query for instance ID by Name tag
+    local instance_id=$(aws ec2 describe-instances \
+        --region "$region" \
+        --filters "Name=tag:Name,Values=$instance_name" \
+        --query "Reservations[0].Instances[0].InstanceId" \
+        --output text)
+    
+    if [ "$instance_id" == "None" ] || [ -z "$instance_id" ]; then
+        echo "Warning: Instance $instance_name not found in region $region"
+        return 1
+    fi
+    
+    # Get all tags from the instance
+    aws ec2 describe-tags \
+        --region "$region" \
+        --filters "Name=resource-id,Values=$instance_id" \
+        --query "Tags[?Key!='Name'].{Key:Key,Value:Value}" \
+        --output json
+}
+
+# Function to get snapshot ID from AMI
+get_ami_snapshot() {
     local ami_id=$1
     local region=$2
     
     aws ec2 describe-images \
-        --image-ids "$ami_id" \
         --region "$region" \
-        --query 'Images[0]' \
-        --output json 2>/dev/null
+        --image-ids "$ami_id" \
+        --query "Images[0].BlockDeviceMappings[0].Ebs.SnapshotId" \
+        --output text
 }
 
-# Function to get instance details and tags
-get_instance_details() {
-    local instance_name=$1
+# Function to get volume size from AMI
+get_ami_volume_size() {
+    local ami_id=$1
     local region=$2
     
-    aws ec2 describe-instances \
-        --filters "Name=tag:Name,Values=$instance_name" \
+    aws ec2 describe-images \
         --region "$region" \
-        --query 'Reservations[0].Instances[0]' \
-        --output json 2>/dev/null
+        --image-ids "$ami_id" \
+        --query "Images[0].BlockDeviceMappings[0].Ebs.VolumeSize" \
+        --output text
 }
 
-# Function to create volume from AMI snapshot
-create_volume_from_ami() {
-    local ami_id=$1
-    local instance_name=$2
-    local zone=$3
-    local region=$4
-    local tags=$5
+# Process each instance
+for instance_data in "${INSTANCES[@]}"; do
+    # Parse instance name and zone
+    IFS=':' read -r instance_name zone <<< "$instance_data"
+    region=${zone%?}
     
-    log_info "Processing instance: $instance_name in zone: $zone"
+    echo "----------------------------------------"
+    echo "Processing: $instance_name in zone $zone"
     
-    # Get AMI details
-    ami_details=$(get_ami_details "$ami_id" "$region")
+    # Create volume name
+    volume_name="${instance_name}-u22-prepared"
     
-    if [ -z "$ami_details" ] || [ "$ami_details" == "null" ]; then
-        log_error "AMI $ami_id not found in region $region"
-        return 1
+    # Get snapshot ID from AMI
+    snapshot_id=$(get_ami_snapshot "$AMI_ID" "$region")
+    if [ "$snapshot_id" == "None" ] || [ -z "$snapshot_id" ]; then
+        echo "Error: Could not get snapshot from AMI $AMI_ID in region $region"
+        continue
     fi
     
-    # Get root device snapshot ID from AMI
-    snapshot_id=$(echo "$ami_details" | jq -r '.BlockDeviceMappings[] | select(.DeviceName == .Ebs.SnapshotId) | .Ebs.SnapshotId // empty')
-    
-    # If above doesn't work, try getting the first EBS snapshot
-    if [ -z "$snapshot_id" ]; then
-        snapshot_id=$(echo "$ami_details" | jq -r '.BlockDeviceMappings[0].Ebs.SnapshotId // empty')
+    # Get volume size from AMI
+    volume_size=$(get_ami_volume_size "$AMI_ID" "$region")
+    if [ "$volume_size" == "None" ] || [ -z "$volume_size" ]; then
+        echo "Error: Could not get volume size from AMI $AMI_ID in region $region"
+        continue
     fi
     
-    if [ -z "$snapshot_id" ] || [ "$snapshot_id" == "null" ]; then
-        log_error "No snapshot found in AMI $ami_id"
-        return 1
+    echo "  Snapshot ID: $snapshot_id"
+    echo "  Volume Size: ${volume_size}GB"
+    
+    # Get tags from existing instance
+    echo "  Fetching tags from instance..."
+    instance_tags=$(get_instance_tags "$instance_name" "$zone")
+    
+    if [ $? -ne 0 ]; then
+        echo "  Skipping due to error fetching tags"
+        continue
     fi
     
-    log_info "Found snapshot: $snapshot_id"
-    
-    # Get volume size and type from AMI
-    volume_size=$(echo "$ami_details" | jq -r '.BlockDeviceMappings[0].Ebs.VolumeSize // 8')
-    volume_type=$(echo "$ami_details" | jq -r '.BlockDeviceMappings[0].Ebs.VolumeType // "gp3"')
-    
-    log_info "Creating volume (Size: ${volume_size}GB, Type: $volume_type)..."
-    
-    # Create the volume
+    # Create volume from snapshot
+    echo "  Creating volume: $volume_name"
     volume_id=$(aws ec2 create-volume \
-        --snapshot-id "$snapshot_id" \
-        --availability-zone "$zone" \
-        --volume-type "$volume_type" \
-        --size "$volume_size" \
         --region "$region" \
-        --query 'VolumeId' \
+        --availability-zone "$zone" \
+        --snapshot-id "$snapshot_id" \
+        --volume-type gp3 \
+        --size "$volume_size" \
+        --tag-specifications "ResourceType=volume,Tags=[{Key=Name,Value=$volume_name}]" \
+        --query "VolumeId" \
         --output text)
     
     if [ -z "$volume_id" ]; then
-        log_error "Failed to create volume for $instance_name"
-        return 1
+        echo "  Error: Failed to create volume"
+        continue
     fi
     
-    log_info "Volume created: $volume_id"
+    echo "  Volume created: $volume_id"
     
-    # Wait for volume to be available
-    log_info "Waiting for volume to become available..."
-    aws ec2 wait volume-available \
-        --volume-ids "$volume_id" \
-        --region "$region"
-    
-    # Apply tags to the volume
-    if [ -n "$tags" ]; then
-        log_info "Applying tags to volume..."
-        aws ec2 create-tags \
-            --resources "$volume_id" \
-            --tags "$tags" \
-            --region "$region"
-    fi
-    
-    log_info "Successfully created volume $volume_id for $instance_name"
-    echo "$instance_name,$zone,$volume_id" >> volume-creation-report.csv
-    
-    return 0
-}
-
-# Main processing loop
-log_info "Processing ${#INSTANCES[@]} instance(s)..."
-
-# Create report file
-echo "InstanceName,Zone,VolumeID" > volume-creation-report.csv
-
-success_count=0
-fail_count=0
-
-for instance_entry in "${INSTANCES[@]}"; do
-    # Parse instance name and zone
-    IFS='|' read -r instance_name zone <<< "$instance_entry"
-    
-    # Extract region from zone (e.g., us-east-1a -> us-east-1)
-    region="${zone%?}"
-    
-    log_info "----------------------------------------"
-    
-    # Get instance details to retrieve tags
-    instance_details=$(get_instance_details "$instance_name" "$region")
-    
-    if [ -z "$instance_details" ] || [ "$instance_details" == "null" ]; then
-        log_warn "Instance $instance_name not found in region $region. Creating volume without instance tags."
-        tags="Key=Name,Value=${instance_name}-volume Key=CreatedFrom,Value=$AMI_ID"
-    else
-        # Extract tags from instance
-        instance_tags=$(echo "$instance_details" | jq -r '.Tags // [] | map("Key=" + .Key + ",Value=" + .Value) | join(" ")')
+    # Apply additional tags from the instance
+    if [ "$instance_tags" != "[]" ] && [ -n "$instance_tags" ]; then
+        echo "  Applying instance tags to volume..."
         
-        if [ -n "$instance_tags" ]; then
-            tags="$instance_tags Key=CreatedFrom,Value=$AMI_ID"
-        else
-            tags="Key=Name,Value=${instance_name}-volume Key=CreatedFrom,Value=$AMI_ID"
+        # Convert JSON tags to AWS CLI format
+        tag_specs=$(echo "$instance_tags" | jq -r '.[] | "Key=\(.Key),Value=\(.Value)"' | tr '\n' ' ')
+        
+        if [ -n "$tag_specs" ]; then
+            aws ec2 create-tags \
+                --region "$region" \
+                --resources "$volume_id" \
+                --tags $tag_specs
+            echo "  Tags applied successfully"
         fi
     fi
     
-    # Create volume
-    if create_volume_from_ami "$AMI_ID" "$instance_name" "$zone" "$region" "$tags"; then
-        ((success_count++))
-    else
-        ((fail_count++))
-        log_error "Failed to create volume for $instance_name"
-    fi
+    echo "  ✓ Completed: $volume_name ($volume_id)"
+    echo ""
 done
 
-log_info "----------------------------------------"
-log_info "Volume creation completed!"
-log_info "Successful: $success_count"
-log_info "Failed: $fail_count"
-log_info "Report saved to: volume-creation-report.csv"
-
-exit 0
+echo "========================================="
+echo "Volume creation process completed!"
