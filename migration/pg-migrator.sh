@@ -559,7 +559,7 @@ function validate_extensions() {
   success "Extension validation completed"
 }
 
-function source_stopdw() {
+function stopdw_source() {
   info "Stopping DW on SOURCE..."
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "sudo -u smoothie stopdw" || {
@@ -568,7 +568,7 @@ function source_stopdw() {
   }
 }
 
-function dest_stopdw() {
+function stopdw_dest() {
   info "Stopping DW on DEST..."
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo -u smoothie stopdw" || {
     error "Execution of stopdw failed."
@@ -576,7 +576,7 @@ function dest_stopdw() {
   }
 }
 
-function source_startdw() {
+function startdw_source() {
   info "Starting DW on SOURCE..."
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "sudo -u smoothie startdw" || {
@@ -585,7 +585,7 @@ function source_startdw() {
   }
 }
 
-function dest_startdw() {
+function startdw_dest() {
   info "Starting DW on DEST..."
 
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo -u smoothie startdw" || {
@@ -884,14 +884,13 @@ function full_migration() {
   check_disk_space_source || return 1
   check_disk_space_dest || return 1
   create_backup_directory || return 1
-
-  source_stopdw || return 1
-  dest_stopdw || return 1
-
+  stopdw_source || return 1
+  stopdw_dest || return 1
   set_maintenance_settings || return 1
   export_globals || return 1
   dump_databases || return 1
   backup_server_files || return 1
+  startdw_source || return 1
   create_archive || return 1
   generate_checksums || return 1
   transfer_to_destination || return 1
@@ -911,8 +910,7 @@ function full_migration() {
   setup_bi_cube || return 1
   sync_timezone || return 1
   display_summary_dest || return 1
-
-  dest_startdw || return 1
+  startdw_dest || return 1
   update_host_key || return 1
 
   success "Full migration completed successfully!"
