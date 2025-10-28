@@ -339,15 +339,18 @@ ENDSSH
 function create_archive() {
   info "Creating compressed archive on source..."
 
-  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "cd ${BACKUP_DIR} && tar czf pg_dumps.tar.gz *.dump globals.sql 2>/dev/null"
-
+  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}"  bash <<ENDSSH
+    cd /tmp && sudo -u root tar czf pg_dumps.tar.gz pg_migration/
+    sudo chown smoothie:smoothie /tmp/pg_dumps.tar.gz
+    sudo chown smoothie:smoothie /tmp/checksums.txt
+ENDSSH
   success "Archive created: pg_dumps.tar.gz"
 }
 
 function generate_checksums() {
   info "Generating checksums on source..."
 
-  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "cd ${BACKUP_DIR} && sha256sum pg_dumps.tar.gz > checksums.txt"
+  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "cd /tmp && sudo -u root sha256sum pg_dumps.tar.gz > /tmp/checksums.txt"
 
   success "Checksums generated"
 }
@@ -385,15 +388,13 @@ function transfer_to_destination() {
 
   info "Pulling files from source to jumpbox..."
   mkdir -p /tmp/pg_transfer
-  rsync -az --progress -e "ssh -q" "${SOURCE_SSH_USER}@${SOURCE_HOST}:${BACKUP_DIR}/pg_dumps.tar.gz" \
-    "${SOURCE_SSH_USER}@${SOURCE_HOST}:${BACKUP_DIR}/checksums.txt" /tmp/pg_transfer/ || {
+  rsync -az --progress -e "ssh -q" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/pg_dumps.tar.gz" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/checksums.txt" /tmp/pg_transfer/ || {
     error "Failed to pull from source"
     return 1
   }
 
   info "Pushing files from jumpbox to destination..."
-  rsync -az --progress -e "ssh -q" /tmp/pg_transfer/pg_dumps.tar.gz /tmp/pg_transfer/checksums.txt \
-    "${DEST_SSH_USER}@${DEST_HOST}:${BACKUP_DIR}/" || {
+  rsync -az --progress -e "ssh -q" /tmp/pg_transfer/pg_dumps.tar.gz /tmp/pg_transfer/checksums.txt "${DEST_SSH_USER}@${DEST_HOST}:/tmp/" || {
     error "Failed to push to destination"
     return 1
   }
@@ -405,7 +406,7 @@ function transfer_to_destination() {
 function validate_checksums() {
   info "Validating checksums on destination..."
 
-  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "cd ${BACKUP_DIR} && sha256sum -c checksums.txt" || {
+  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "cd /tmp && sha256sum -c checksums.txt" || {
     error "Checksum validation failed"
     return 1
   }
@@ -416,7 +417,7 @@ function validate_checksums() {
 function extract_archive() {
   info "Extracting archive on destination..."
 
-  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "cd ${BACKUP_DIR} && tar xzf pg_dumps.tar.gz" || {
+  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "cd /tmp && sudo -u root tar xzf pg_dumps.tar.gz" || {
     error "Failed to extract archive"
     return 1
   }
