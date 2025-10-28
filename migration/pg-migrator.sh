@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# PostgreSQL 12 to 14 Migration Tool (Jumpbox Edition)
+# PostgreSQL 12 to 14 Migration Tool (via Jumpbox)
 # Executes from jumpbox with SSH access to source and destination servers
 #
 # Author  : Frank Claassens
@@ -8,7 +8,7 @@
 # Updated : Mon 27 October 2025
 #
 
-# Color constants
+# Colour constants
 readonly BLACK='\033[0;30m' RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[0;33m'
 readonly BLUE='\033[0;34m' MAGENTA='\033[0;35m' CYAN='\033[0;36m' WHITE='\033[0;37m'
 readonly BOLD_BLACK='\033[1;30m' BOLD_RED='\033[1;31m' BOLD_GREEN='\033[1;32m' BOLD_YELLOW='\033[1;33m'
@@ -825,6 +825,30 @@ function sync_timezone() {
   return 0
 }
 
+function show_execution_time() {
+  local start_time=$1
+  local end_time
+  end_time=$(date +%s)
+  local duration=$((end_time - start_time))
+  local hours=$((duration / 3600))
+  local minutes=$(((duration % 3600) / 60))
+  local seconds=$((duration % 60))
+
+  printf '\n%b' "${BOLD_CYAN}═══════════════════════════════════════════════════════════${RESET}\n"
+  printf '%b' "${BOLD_WHITE}Execution Time: "
+
+  if (( hours > 0 )); then
+    printf '%dh %dm %ds' "${hours}" "${minutes}" "${seconds}"
+  elif (( minutes > 0 )); then
+    printf '%dm %ds' "${minutes}" "${seconds}"
+  else
+    printf '%ds' "${seconds}"
+  fi
+
+  printf '%b\n' "${RESET}"
+  printf '%b' "${BOLD_CYAN}═══════════════════════════════════════════════════════════${RESET}\n"
+}
+
 function full_migration() {
   info "Starting full migration process..."
 
@@ -865,35 +889,11 @@ function full_migration() {
   success "Full migration completed successfully!"
 }
 
-function show_execution_time() {
-  local start_time=$1
-  local end_time
-  end_time=$(date +%s)
-  local duration=$((end_time - start_time))
-  local hours=$((duration / 3600))
-  local minutes=$(((duration % 3600) / 60))
-  local seconds=$((duration % 60))
-
-  printf '\n%b' "${BOLD_CYAN}═══════════════════════════════════════════════════════════${RESET}\n"
-  printf '%b' "${BOLD_WHITE}Execution Time: "
-
-  if (( hours > 0 )); then
-    printf '%dh %dm %ds' "${hours}" "${minutes}" "${seconds}"
-  elif (( minutes > 0 )); then
-    printf '%dm %ds' "${minutes}" "${seconds}"
-  else
-    printf '%ds' "${seconds}"
-  fi
-
-  printf '%b\n' "${RESET}"
-  printf '%b' "${BOLD_CYAN}═══════════════════════════════════════════════════════════${RESET}\n"
-}
-
 function show_menu() {
   clear
-  printf '%b\n' "${BOLD_CYAN}╔═════════════════════════════════════════════════════╗${RESET}"
-  printf '%b\n' "${BOLD_CYAN}║     PostgreSQL 12 → 14 Migration Tool (Jumpbox)     ║${RESET}"
-  printf '%b\n' "${BOLD_CYAN}╚═════════════════════════════════════════════════════╝${RESET}"
+  printf '%b\n' "${BOLD_CYAN}╔═════════════════════════════════════════════════╗${RESET}"
+  printf '%b\n' "${BOLD_CYAN}║ PostgreSQL 12 → 14 Migration Tool (via Jumpbox) ║${RESET}"
+  printf '%b\n' "${BOLD_CYAN}╚═════════════════════════════════════════════════╝${RESET}"
   printf '\n'
   printf '%b\n' "${BOLD_WHITE}Source: ${SOURCE_SSH_USER}@${SOURCE_HOST}:${SOURCE_PORT}${RESET}"
   printf '%b\n' "${BOLD_WHITE}Destination: ${DEST_SSH_USER}@${DEST_HOST}:${DEST_PORT}${RESET}"
