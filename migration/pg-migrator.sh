@@ -601,6 +601,19 @@ function update_host_key() {
 function backup_server_files() {
   info "Backing up server files on source..."
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
+    function info() {
+      printf '%b[%s]: %s%b\n' "\033[1;34m" "\$(date +'%Y-%m-%d %H:%M:%S')" "\$*" "\033[0m"
+    }
+    function warn() {
+      printf '%b[%s]: %s%b\n' "\033[1;33m" "\$(date +'%Y-%m-%d %H:%M:%S')" "\$*" "\033[0m"
+    }
+    function error() {
+      printf '%b[%s]: %s%b\n' "\033[1;31m" "\$(date +'%Y-%m-%d %H:%M:%S')" "\$*" "\033[0m" >&2
+    }
+    function success() {
+      printf '%b[%s]: %s%b\n' "\033[1;32m" "\$(date +'%Y-%m-%d %H:%M:%S')" "\$*" "\033[0m"
+    }
+
     mkdir -p "${SERVER_FILES_BACKUP_DIR}" || {
       error "Failed to create server files backup directory"
       return 1
