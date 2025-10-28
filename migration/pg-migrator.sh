@@ -137,7 +137,7 @@ function validate_environment() {
   success "Environment validation passed"
 }
 
-function check_disk_space() {
+function check_disk_space_source() {
   info "Checking disk space on source server..."
 
   local available
@@ -153,6 +153,24 @@ function check_disk_space() {
   fi
 
   success "Disk space check passed: ${available}GB available on source"
+}
+
+function check_disk_space_dest() {
+  info "Checking disk space on dest server..."
+
+  local available
+  available=$(ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "df -BG ${BACKUP_DIR%/*} 2>/dev/null | awk 'NR==2 {print \$4}' | sed 's/G//'")
+
+  if [[ -z "${available}" ]]; then
+    available=$(ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "df -BG / | awk 'NR==2 {print \$4}' | sed 's/G//'")
+  fi
+
+  if (( available < 10 )); then
+    error "Insufficient disk space on source. Available: ${available}GB"
+    return 1
+  fi
+
+  success "Disk space check passed: ${available}GB available on dest"
 }
 
 function create_backup_directory() {
@@ -591,23 +609,23 @@ function backup_server_files() {
     return 1
   }
 
-  info "Copying /opt/* from source..."
-  rsync -avPHz --relative /opt/ "${SERVER_FILES_BACKUP_DIR}/" || {
+  info "Copying /opt/ from source..."
+  sudo -u root rsync -avPHz --relative /opt/ "${SERVER_FILES_BACKUP_DIR}/" || {
     warn "Failed to copy /opt/* (may not exist or be empty)"
   }
 
   info "Copying /etc/default/jetty from source..."
-  rsync -avPHz --relative /etc/default/jetty "${SERVER_FILES_BACKUP_DIR}/" || {
+  sudo -u root rsync -avPHz --relative /etc/default/jetty "${SERVER_FILES_BACKUP_DIR}/" || {
     warn "Failed to copy /etc/default/jetty (may not exist)"
   }
 
   info "Copying /home/smoothie/Scripts/* from source..."
-  rsync -avPHz --relative /home/smoothie/Scripts/ "${SERVER_FILES_BACKUP_DIR}/" || {
+  sudo -u root rsync -avPHz --relative /home/smoothie/Scripts/ "${SERVER_FILES_BACKUP_DIR}/" || {
     warn "Failed to copy /home/smoothie/Scripts/* (may not exist or be empty)"
   }
 
   info "Copying SSH host keys from source..."
-  rsync -avPHz --relative /etc/ssh/ssh_host* "${SERVER_FILES_BACKUP_DIR}/" || {
+  sudo -u root rsync -avPHz --relative /etc/ssh/ssh_host* "${SERVER_FILES_BACKUP_DIR}/" || {
     warn "Failed to copy SSH host keys (may not have permissions)"
   }
 
@@ -853,7 +871,8 @@ function full_migration() {
   info "Starting full migration process..."
 
   validate_environment || return 1
-  check_disk_space || return 1
+  check_disk_space_source || return 1
+  check_disk_space_dest || return 1
   create_backup_directory || return 1
 
   source_stopdw || return 1
@@ -900,16 +919,16 @@ function show_menu() {
   printf '%b\n' "${BOLD_WHITE}Backup Directory: ${BACKUP_DIR}${RESET}"
   printf '\n'
   printf '%b\n' "${BOLD_GREEN}1)${RESET} Full Migration (All Steps)"
-  printf '%b\n' "${BOLD_GREEN}2)${RESET} Pre-Migration (Validate & Prepare)"
-  printf '%b\n' "${BOLD_GREEN}3)${RESET} Dump Databases"
-  printf '%b\n' "${BOLD_GREEN}4)${RESET} Compress and Checksum"
-  printf '%b\n' "${BOLD_GREEN}5)${RESET} Transfer to Destination"
-  printf '%b\n' "${BOLD_GREEN}6)${RESET} Restore Databases"
-  printf '%b\n' "${BOLD_GREEN}7)${RESET} Post-Restore Maintenance"
-  printf '%b\n' "${BOLD_GREEN}8)${RESET} Validation Suite"
-  printf '%b\n' "${BOLD_GREEN}9)${RESET} Print summary of Databases"
-  printf '%b\n' "${BOLD_GREEN}10)${RESET} Backup Server Files"
-  printf '%b\n' "${BOLD_GREEN}11)${RESET} Restore Server Files"
+  printf '%b\n' "${BOLD_GREEN}2)${RESET} Pre-Migration (Validate ENV, Disk Space Check & Backup Dir Creation)"
+  printf '%b\n' "${BOLD_GREEN}3)${RESET} Dump Databases (SOURCE)"
+  printf '%b\n' "${BOLD_GREEN}4)${RESET} Compress and Checksum (SOURCE)"
+  printf '%b\n' "${BOLD_GREEN}5)${RESET} Transfer to Destination (SOURCE+DEST)"
+  printf '%b\n' "${BOLD_GREEN}6)${RESET} Restore Databases (DEST)"
+  printf '%b\n' "${BOLD_GREEN}7)${RESET} Post-Restore - Maintenance (Analyze,Vacuum,ReIndex)(DEST)"
+  printf '%b\n' "${BOLD_GREEN}8)${RESET} Post-Restore - Data Validation Suite (DEST)"
+  printf '%b\n' "${BOLD_GREEN}9)${RESET} Print summary of Databases (SOURCE)"
+  printf '%b\n' "${BOLD_GREEN}10)${RESET} Backup Server Files (SOURCE)"
+  printf '%b\n' "${BOLD_GREEN}11)${RESET} Restore Server Files (DEST))"
   printf '%b\n' "${BOLD_GREEN}12)${RESET} Rename Smoothie Folder (DEST)"
   printf '%b\n' "${BOLD_GREEN}13)${RESET} Setup bi_cube (DEST)"
   printf '%b\n' "${BOLD_GREEN}14)${RESET} Sync Timezone (DEST)"
@@ -935,13 +954,12 @@ function main() {
         read -p "Press Enter to continue..."
         ;;
       2)
-        validate_environment && check_disk_space && create_backup_directory
+        validate_environment && check_disk_space_source && check_disk_space_dest && create_backup_directory
         show_execution_time "${start_time}"
         read -p "Press Enter to continue..."
         ;;
       3)
-        validate_environment && check_disk_space && create_backup_directory && set_maintenance_settings && export_globals && dump_databases && revert_maintenance_settings
-        # validate_environment && check_disk_space && create_backup_directory && export_globals && dump_databases
+        validate_environment && check_disk_space_source && check_disk_space_dest && create_backup_directory && set_maintenance_settings && export_globals && dump_databases && revert_maintenance_settings
         show_execution_time "${start_time}"
         read -p "Press Enter to continue..."
         ;;
