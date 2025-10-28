@@ -600,37 +600,33 @@ function update_host_key() {
 
 function backup_server_files() {
   info "Backing up server files on source..."
-
-  info "Creating server files backup directory on source..."
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
+    mkdir -p "${SERVER_FILES_BACKUP_DIR}" || {
+      error "Failed to create server files backup directory"
+      return 1
+    }
 
-  mkdir -p "${SERVER_FILES_BACKUP_DIR}" || {
-    error "Failed to create server files backup directory"
-    return 1
-  }
+    info "Copying /opt/ from source..."
+    sudo -u root rsync -avPHz --relative /opt/ "${SERVER_FILES_BACKUP_DIR}/" || {
+      warn "Failed to copy /opt/* (may not exist or be empty)"
+    }
 
-  info "Copying /opt/ from source..."
-  sudo -u root rsync -avPHz --relative /opt/ "${SERVER_FILES_BACKUP_DIR}/" || {
-    warn "Failed to copy /opt/* (may not exist or be empty)"
-  }
+    info "Copying /etc/default/jetty from source..."
+    sudo -u root rsync -avPHz --relative /etc/default/jetty "${SERVER_FILES_BACKUP_DIR}/" || {
+      warn "Failed to copy /etc/default/jetty (may not exist)"
+    }
 
-  info "Copying /etc/default/jetty from source..."
-  sudo -u root rsync -avPHz --relative /etc/default/jetty "${SERVER_FILES_BACKUP_DIR}/" || {
-    warn "Failed to copy /etc/default/jetty (may not exist)"
-  }
+    info "Copying /home/smoothie/Scripts/* from source..."
+    sudo -u root rsync -avPHz --relative /home/smoothie/Scripts/ "${SERVER_FILES_BACKUP_DIR}/" || {
+      warn "Failed to copy /home/smoothie/Scripts/* (may not exist or be empty)"
+    }
 
-  info "Copying /home/smoothie/Scripts/* from source..."
-  sudo -u root rsync -avPHz --relative /home/smoothie/Scripts/ "${SERVER_FILES_BACKUP_DIR}/" || {
-    warn "Failed to copy /home/smoothie/Scripts/* (may not exist or be empty)"
-  }
+    info "Copying SSH host keys from source..."
+    sudo -u root rsync -avPHz --relative /etc/ssh/ssh_host* "${SERVER_FILES_BACKUP_DIR}/" || {
+      warn "Failed to copy SSH host keys (may not have permissions)"
+    }
 
-  info "Copying SSH host keys from source..."
-  sudo -u root rsync -avPHz --relative /etc/ssh/ssh_host* "${SERVER_FILES_BACKUP_DIR}/" || {
-    warn "Failed to copy SSH host keys (may not have permissions)"
-  }
-
-  success "Server files backup completed. Files stored in: ${SERVER_FILES_BACKUP_DIR}"
-
+    success "Server files backup completed. Files stored in: ${SERVER_FILES_BACKUP_DIR}"
 ENDSSH
 }
 
