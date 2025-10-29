@@ -762,19 +762,6 @@ function setup_bi_cube() {
 
   success "[☑️] bi_cube files backed up on source"
 
-#  info "Transferring bi_cube files to destination..."
-#  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo mkdir -p ${SERVER_FILES_BACKUP_DIR}" || {
-#    error "Failed to create backup directory on destination"
-#    return 1
-#  }
-
-#  rsync -avPHz --relative "${SERVER_FILES_BACKUP_DIR}/"* "${DEST_SSH_USER}@${DEST_HOST}:${SERVER_FILES_BACKUP_DIR}/" || {
-#    error "Failed to transfer bi_cube files to destination"
-#    return 1
-#  }
-#
-#  success "bi_cube files transferred to destination"
-
   info "[⏳] Setting ownership on destination..."
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
     # Set ownership for ibp files
@@ -813,7 +800,7 @@ ENDSSH
     return 1
   }
 
-  success "python3-venv installed"
+  success "[☑️] python3-venv installed"
 
   info "[⏳] Creating Python virtual environment..."
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
@@ -829,8 +816,8 @@ ENDSSH
     return 1
   fi
 
-  success "Python virtual environment created and packages installed"
-  success "bi_cube setup completed successfully"
+  success "[☑️] Python virtual environment created and packages installed"
+  success "[☑️] bi_cube setup completed successfully"
 }
 
 function sync_timezone() {
@@ -890,12 +877,12 @@ function sync_timezone() {
 }
 
 function update_hosts_file_dest() {
-  info "[⏳] Retrieving source hostname from /etc/hosts..."
+  info "[⏳] Retrieving source hostname from local /etc/hosts..."
   local source_hostname
   source_hostname=$(grep -i "${SOURCE_HOST}" /etc/hosts | awk '{print $2}')
 
   if [[ -z "${source_hostname}" ]]; then
-    error "Failed to retrieve hostname for ${SOURCE_HOST} from lastion /etc/hosts"
+    error "Failed to retrieve hostname for ${SOURCE_HOST} from local /etc/hosts"
     return 1
   fi
 
@@ -913,7 +900,7 @@ ENDSSH
     return 1
   fi
 
-  success "[☑️] /etc/hosts file updated successfully"
+  success "[☑️] Successfully updated /etc/hosts on destination"
 }
 
 function final_cleanup() {
@@ -1016,7 +1003,7 @@ function full_migration() {
   update_host_key || return 1
   #TODO: On deploy, remove salt-key -d INSTANCE and salt-key -a INSTANCE
   final_cleanup || return 1
-  
+
   success "[✅] 🎉 Full migration completed successfully! 🎉"
 }
 
