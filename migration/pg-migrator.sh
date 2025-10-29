@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
-# PostgreSQL 12 to 14 Migration Tool (via Jumpbox)
-# Executes from jumpbox with SSH access to source and destination servers
+# IBP Migration Tool (via Jumpbox)
+# - Migrates any IBP EC2 instance to latest Ubuntu 22.04 with PostgreSQL 14.
+# - Executes from jumpbox with SSH access to source and destination servers.
 #
 # Author  : Frank Claassens
 # Created : 15 October 2025
@@ -983,12 +984,12 @@ function full_migration() {
 
 function show_menu() {
   clear
-  printf '%b\n' "${BOLD_CYAN}╔═════════════════════════════════════════════════╗${RESET}"
-  printf '%b\n' "${BOLD_CYAN}║ PostgreSQL 12 → 14 Migration Tool (via Jumpbox) ║${RESET}"
-  printf '%b\n' "${BOLD_CYAN}╚═════════════════════════════════════════════════╝${RESET}"
+  printf '%b\n' "${BOLD_CYAN}╔════════════════════════════════════════════════════════╗${RESET}"
+  printf '%b\n' "${BOLD_CYAN}║ IBP Migration Tool - Ubuntu 22.04 + PG14 (via Jumpbox) ║${RESET}"
+  printf '%b\n' "${BOLD_CYAN}╚════════════════════════════════════════════════════════╝${RESET}"
   printf '\n'
-  printf '%b\n' "${BOLD_WHITE}Source: ${SOURCE_SSH_USER}@${SOURCE_HOST}:${SOURCE_PORT}${RESET}"
-  printf '%b\n' "${BOLD_WHITE}Destination: ${DEST_SSH_USER}@${DEST_HOST}:${DEST_PORT}${RESET}"
+  printf '%b\n' "${BOLD_WHITE}Source: ${SOURCE_SSH_USER}@${SOURCE_HOST}${RESET}"
+  printf '%b\n' "${BOLD_WHITE}Destination: ${DEST_SSH_USER}@${DEST_HOST}${RESET}"
   printf '%b\n' "${BOLD_WHITE}Backup Directory: ${BACKUP_DIR}${RESET}"
   printf '\n'
   printf '%b\n' "${BOLD_GREEN}1)${RESET} Full Migration (All Steps)"
