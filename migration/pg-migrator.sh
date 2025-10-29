@@ -5,7 +5,7 @@
 #
 # Author  : Frank Claassens
 # Created : 15 October 2025
-# Updated : Tue 28 October 2025
+# Updated : Wed 29 October 2025
 #
 
 # Colour constants
