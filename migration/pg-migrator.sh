@@ -224,28 +224,52 @@ function display_summary_dest() {
   }
 }
 
-function set_maintenance_settings() {
-  info "[⏳] Setting temporary maintenance settings..."
+function set_maintenance_settings_source() {
+  info "[⏳] Setting temporary maintenance settings on source..."
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
+    cpu_cores=\$(nproc)
+    half_cores=\$((cpu_cores / 2))
     psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET maintenance_work_mem = '2GB';" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET max_parallel_maintenance_workers = 16;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET max_parallel_workers_per_gather = 8;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET max_parallel_maintenance_workers = \${cpu_cores};" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET max_parallel_workers_per_gather = \${half_cores};" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET checkpoint_timeout = '1h';" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET max_wal_size = '64GB';" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "SELECT pg_reload_conf();"
 ENDSSH
 
   if [[ $? -ne 0 ]]; then
-    error "Failed to set maintenance settings"
+    error "Failed to set maintenance settings on source"
     return 1
   fi
 
-  success "[☑️] Maintenance settings applied"
+  success "[☑️] Maintenance settings applied on source"
 }
 
-function revert_maintenance_settings() {
-  info "[⏳] Reverting maintenance settings to defaults..."
+function set_maintenance_settings_dest() {
+  info "[⏳] Setting temporary maintenance settings on destination..."
+
+  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
+    cpu_cores=\$(nproc)
+    half_cores=\$((cpu_cores / 2))
+    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET maintenance_work_mem = '2GB';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET max_parallel_maintenance_workers = \${cpu_cores};" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET max_parallel_workers_per_gather = \${half_cores};" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET checkpoint_timeout = '1h';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET max_wal_size = '64GB';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "SELECT pg_reload_conf();"
+ENDSSH
+
+  if [[ $? -ne 0 ]]; then
+    error "Failed to set maintenance settings on destination"
+    return 1
+  fi
+
+  success "[☑️] Maintenance settings applied on destination"
+}
+
+function revert_maintenance_settings_source() {
+  info "[⏳] Reverting maintenance settings to defaults on source..."
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
     psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM RESET maintenance_work_mem;" && \
@@ -257,11 +281,31 @@ function revert_maintenance_settings() {
 ENDSSH
 
   if [[ $? -ne 0 ]]; then
-    error "Failed to revert maintenance settings"
+    error "Failed to revert maintenance settings on source"
     return 1
   fi
 
-  success "[☑️] Maintenance settings reverted to defaults"
+  success "[☑️] Maintenance settings reverted to defaults on source"
+}
+
+function revert_maintenance_settings_dest() {
+  info "[⏳] Reverting maintenance settings to defaults on destination..."
+
+  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
+    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM RESET maintenance_work_mem;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM RESET max_parallel_maintenance_workers;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM RESET max_parallel_workers_per_gather;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM RESET checkpoint_timeout;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM RESET max_wal_size;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "SELECT pg_reload_conf();"
+ENDSSH
+
+  if [[ $? -ne 0 ]]; then
+    error "Failed to revert maintenance settings on destination"
+    return 1
+  fi
+
+  success "[☑️] Maintenance settings reverted to defaults on destination"
 }
 
 function dump_databases() {
@@ -671,7 +715,7 @@ function restore_server_files() {
   }
 
   info "[⏳] Moving files to final locations on destination (requires sudo)..."
-  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<'ENDSSH'
+  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
     if [[ -d /tmp/server_files_restore ]]; then
       sudo find /tmp/server_files_restore -name "ssh_host*" -exec mv {} /etc/ssh/ \; 2>/dev/null
       sudo find /tmp/server_files_restore -name "jetty" -exec mv {} /etc/default/ \; 2>/dev/null
@@ -734,7 +778,7 @@ function setup_bi_cube() {
 #  success "bi_cube files transferred to destination"
 
   info "[⏳] Setting ownership on destination..."
-  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<'ENDSSH'
+  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
     # Set ownership for ibp files
     if ls /tmp/pg_migration/server_files/etc/profile.d/ibp* 1> /dev/null 2>&1; then
       sudo chown smoothie:smoothie /tmp/pg_migration/server_files/etc/profile.d/ibp*
@@ -774,7 +818,7 @@ ENDSSH
   success "python3-venv installed"
 
   info "[⏳] Creating Python virtual environment..."
-  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<'ENDSSH'
+  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
     # Create venv
     sudo python3 -m venv /opt/bi_cube_ip_whitelist/ || exit 1
 
@@ -880,16 +924,18 @@ function full_migration() {
   create_backup_directory || return 1
   stopdw_source || return 1
   stopdw_dest || return 1
-  set_maintenance_settings || return 1
+  set_maintenance_settings_source || return 1
   export_globals || return 1
   dump_databases || return 1
   backup_server_files || return 1
+  revert_maintenance_settings_source || return 1
   # startdw_source || return 1
   create_archive || return 1
   generate_checksums || return 1
   transfer_to_destination || return 1
   validate_checksums || return 1
   extract_archive || return 1
+  set_maintenance_settings_dest || return 1
   restore_globals || return 1
   restore_databases || return 1
   run_analyze || return 1
@@ -898,7 +944,7 @@ function full_migration() {
   validate_row_counts || return 1
   validate_constraints || return 1
   validate_extensions || return 1
-  revert_maintenance_settings || return 1
+  revert_maintenance_settings_dest || return 1
   rename_smoothie_folder || return 1
   # restore_server_files || return 1
   # setup_bi_cube || return 1
@@ -962,7 +1008,7 @@ function main() {
         read -p "Press Enter to continue..."
         ;;
       3)
-        validate_environment && check_disk_space_source && check_disk_space_dest && create_backup_directory && set_maintenance_settings && export_globals && dump_databases && revert_maintenance_settings
+        validate_environment && check_disk_space_source && check_disk_space_dest && create_backup_directory && set_maintenance_settings_source && export_globals && dump_databases && revert_maintenance_settings_source
         show_execution_time "${start_time}"
         read -p "Press Enter to continue..."
         ;;
@@ -977,17 +1023,17 @@ function main() {
         read -p "Press Enter to continue..."
         ;;
       6)
-        extract_archive && restore_globals && restore_databases
+        extract_archive && set_maintenance_settings_dest && restore_globals && restore_databases && revert_maintenance_settings_dest
         show_execution_time "${start_time}"
         read -p "Press Enter to continue..."
         ;;
       7)
-        run_analyze && run_vacuum && run_reindex
+        set_maintenance_settings_dest && run_analyze && run_vacuum && run_reindex && revert_maintenance_settings_dest
         show_execution_time "${start_time}"
         read -p "Press Enter to continue..."
         ;;
       8)
-        validate_row_counts && validate_constraints && validate_extensions
+        set_maintenance_settings_dest && validate_row_counts && validate_constraints && validate_extensions && revert_maintenance_settings_dest
         show_execution_time "${start_time}"
         read -p "Press Enter to continue..."
         ;;
