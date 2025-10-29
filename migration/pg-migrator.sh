@@ -695,6 +695,11 @@ function backup_server_files() {
       warn "Failed to copy SSH host keys (may not have permissions)"
     }
 
+    info "Copying salt minion_id file from source..."
+    sudo -u root rsync -avPHz --relative /etc/salt/minion_id "${SERVER_FILES_BACKUP_DIR}/" || {
+      warn "Failed to copy salt minion file"
+    }
+
     success "[☑️] Server files backup completed. Files stored in: ${SERVER_FILES_BACKUP_DIR}"
 ENDSSH
 }
@@ -705,6 +710,7 @@ function restore_server_files() {
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}"  bash <<ENDSSH
     sudo -u root rsync -avPHz ${SERVER_FILES_BACKUP_DIR}/etc/default/jetty /etc/default/
     sudo -u root rsync -avPHz ${SERVER_FILES_BACKUP_DIR}/etc/ssh/ /etc/ssh/
+    sudo -u root rsync -avPHz ${SERVER_FILES_BACKUP_DIR}/etc/salt/minion_id /etc/salt/
     sudo -u root rsync -avPHz ${SERVER_FILES_BACKUP_DIR}/home/ /home/
     sudo -u root rsync -avPHz ${SERVER_FILES_BACKUP_DIR}/opt/ /opt/
 ENDSSH
