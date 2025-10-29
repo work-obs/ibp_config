@@ -10,12 +10,8 @@
 #
 
 # Colour constants
-readonly BLACK='\033[0;30m' RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[0;33m'
-readonly BLUE='\033[0;34m' MAGENTA='\033[0;35m' CYAN='\033[0;36m' WHITE='\033[0;37m'
-readonly BOLD_BLACK='\033[1;30m' BOLD_RED='\033[1;31m' BOLD_GREEN='\033[1;32m' BOLD_YELLOW='\033[1;33m'
-readonly BOLD_BLUE='\033[1;34m' BOLD_MAGENTA='\033[1;35m' BOLD_CYAN='\033[1;36m' BOLD_WHITE='\033[1;37m'
-readonly DIM_BLACK='\033[2;30m' DIM_RED='\033[2;31m' DIM_GREEN='\033[2;32m' DIM_YELLOW='\033[2;33m'
-readonly DIM_BLUE='\033[2;34m' DIM_MAGENTA='\033[2;35m' DIM_CYAN='\033[2;36m' DIM_WHITE='\033[2;37m'
+readonly BOLD_RED='\033[1;31m' BOLD_GREEN='\033[1;32m' BOLD_YELLOW='\033[1;33m'
+readonly BOLD_BLUE='\033[1;34m' BOLD_CYAN='\033[1;36m' BOLD_WHITE='\033[1;37m'
 readonly RESET='\033[0m'
 
 # Configuration variables
@@ -167,7 +163,7 @@ function check_disk_space_dest() {
   fi
 
   if (( available < 10 )); then
-    error "Insufficient disk space on source. Available: ${available}GB"
+    error "Insufficient disk space on destination. Available: ${available}GB"
     return 1
   fi
 
@@ -237,12 +233,12 @@ function set_maintenance_settings_source() {
     half_cores=\$((cpu_cores / 2))
     info " [-] Detected CPU Cores: \$cpu_cores"
     
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET maintenance_work_mem = '2GB';" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET max_parallel_maintenance_workers = \${cpu_cores};" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET max_parallel_workers_per_gather = \${half_cores};" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET checkpoint_timeout = '1h';" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET max_wal_size = '64GB';" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "SELECT pg_reload_conf();"
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET maintenance_work_mem = '2GB';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET max_parallel_maintenance_workers = \${cpu_cores};" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET max_parallel_workers_per_gather = \${half_cores};" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET checkpoint_timeout = '1h';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET max_wal_size = '64GB';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "SELECT pg_reload_conf();"
 ENDSSH
 
   if [[ $? -ne 0 ]]; then
@@ -265,12 +261,12 @@ function set_maintenance_settings_dest() {
     half_cores=\$((cpu_cores / 2))
     info " [-] Detected CPU Cores: \$cpu_cores"
 
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET maintenance_work_mem = '2GB';" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET max_parallel_maintenance_workers = \${cpu_cores};" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET max_parallel_workers_per_gather = \${half_cores};" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET checkpoint_timeout = '1h';" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET max_wal_size = '64GB';" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "SELECT pg_reload_conf();"
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM SET maintenance_work_mem = '2GB';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM SET max_parallel_maintenance_workers = \${cpu_cores};" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM SET max_parallel_workers_per_gather = \${half_cores};" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM SET checkpoint_timeout = '1h';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM SET max_wal_size = '64GB';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "SELECT pg_reload_conf();"
 ENDSSH
 
   if [[ $? -ne 0 ]]; then
@@ -285,12 +281,12 @@ function revert_maintenance_settings_source() {
   info "[⏳] Reverting maintenance settings to defaults on source..."
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM RESET maintenance_work_mem;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM RESET max_parallel_maintenance_workers;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM RESET max_parallel_workers_per_gather;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM RESET checkpoint_timeout;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM RESET max_wal_size;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "SELECT pg_reload_conf();"
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET maintenance_work_mem;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET max_parallel_maintenance_workers;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET max_parallel_workers_per_gather;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET checkpoint_timeout;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET max_wal_size;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "SELECT pg_reload_conf();"
 ENDSSH
 
   if [[ $? -ne 0 ]]; then
@@ -305,12 +301,12 @@ function revert_maintenance_settings_dest() {
   info "[⏳] Reverting maintenance settings to defaults on destination..."
 
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM RESET maintenance_work_mem;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM RESET max_parallel_maintenance_workers;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM RESET max_parallel_workers_per_gather;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM RESET checkpoint_timeout;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM RESET max_wal_size;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "SELECT pg_reload_conf();"
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET maintenance_work_mem;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET max_parallel_maintenance_workers;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET max_parallel_workers_per_gather;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET checkpoint_timeout;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET max_wal_size;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "SELECT pg_reload_conf();"
 ENDSSH
 
   if [[ $? -ne 0 ]]; then
@@ -488,12 +484,12 @@ function restore_databases() {
     return 0
   fi
 
-  echo -e "-------------------------------------"
-  echo -e "-- SUMMARY OF DATABASES TO RESTORE --"
-  echo -e "-------------------------------------"
-  echo -e "${databases}"
-  echo -e "-------------------------------------"
-  echo ""
+  echo "-------------------------------------"
+  echo "-- SUMMARY OF DATABASES TO RESTORE --"
+  echo "-------------------------------------"
+  echo "${databases}"
+  echo "-------------------------------------"
+  echo
 
   info "[⏳] Restoring databases in parallel..."
   for db in ${databases}; do
