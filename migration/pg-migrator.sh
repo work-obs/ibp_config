@@ -990,7 +990,7 @@ function show_menu() {
   printf '\n'
   printf '%b\n' "${BOLD_WHITE}Source: ${SOURCE_SSH_USER}@${SOURCE_HOST}${RESET}"
   printf '%b\n' "${BOLD_WHITE}Destination: ${DEST_SSH_USER}@${DEST_HOST}${RESET}"
-  printf '%b\n' "${BOLD_WHITE}Backup Directory: ${BACKUP_DIR}${RESET}"
+  printf '%b\n' "${BOLD_WHITE}Backup Directory: /tmp/pg_migration ${RESET}"
   printf '\n'
   printf '%b\n' "${BOLD_GREEN}1)${RESET} Full Migration (All Steps)"
   printf '%b\n' "${BOLD_GREEN}2)${RESET} Pre-Migration (Validate ENV, Disk Space Check & Backup Dir Creation)"
