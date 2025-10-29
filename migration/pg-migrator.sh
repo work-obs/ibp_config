@@ -994,8 +994,8 @@ function show_menu() {
   printf '%b\n' "${BOLD_GREEN}7)${RESET} Post-Restore - Maintenance (Analyze,Vacuum,ReIndex) (DEST)"
   printf '%b\n' "${BOLD_GREEN}8)${RESET} Post-Restore - Data Validation Suite (DEST)"
   printf '%b\n' "${BOLD_GREEN}9)${RESET} Print summary of Databases (SOURCE)"
-  printf '%b\n' "${BOLD_GREEN}10)${RESET} Backup Server Files (SOURCE)"
-  printf '%b\n' "${BOLD_GREEN}11)${RESET} Restore Server Files (DEST))"
+  printf '%b\n' "${BOLD_GREEN}10)${RESET} Print Summary of Databases (DEST)"
+  printf '%b\n' "${BOLD_GREEN}11)${RESET} Backup & Restore Server Files (SOURCE+DEST))"
   printf '%b\n' "${BOLD_GREEN}12)${RESET} Rename Smoothie Folder (DEST)"
   printf '%b\n' "${BOLD_GREEN}13)${RESET} Setup bi_cube (DEST)"
   printf '%b\n' "${BOLD_GREEN}14)${RESET} Sync Timezone (DEST)"
@@ -1061,12 +1061,12 @@ function main() {
         read -p "Press Enter to continue..."
         ;;
       10)
-        backup_server_files
+        display_summary_dest
         show_execution_time "${start_time}"
         read -p "Press Enter to continue..."
         ;;
       11)
-        rename_smoothie_folder && restore_server_files
+        backup_server_files && rename_smoothie_folder && restore_server_files
         show_execution_time "${start_time}"
         read -p "Press Enter to continue..."
         ;;
