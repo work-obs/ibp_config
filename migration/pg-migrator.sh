@@ -916,6 +916,42 @@ ENDSSH
   success "[☑️] /etc/hosts file updated successfully"
 }
 
+function final_cleanup() {
+  info "[⏳] Performing final cleanup..."
+  info "  [-] Cleaning up SOURCE_HOST: ${SOURCE_HOST}"
+
+  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
+    sudo rm -rf /tmp/pg_migration 2>/dev/null
+    sudo rm -f /tmp/pg_dumps.tar.zst 2>/dev/null
+    sudo rm -f /tmp/checksums.txt 2>/dev/null
+ENDSSH
+
+  if [[ $? -ne 0 ]]; then
+    warn "Failed to perform final cleanup on source"
+    return 1
+  fi
+
+  info "  [-] Cleaning up DEST_HOST: ${DEST_HOST}"
+  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
+    sudo rm -rf /opt/smoothie11_old 2>/dev/null
+    sudo rm -rf /tmp/pg_migration 2>/dev/null
+    sudo rm -f /tmp/pg_dumps.tar.zst 2>/dev/null
+    sudo rm -f /tmp/checksums.txt 2>/dev/null
+ENDSSH
+
+  if [[ $? -ne 0 ]]; then
+    warn "Failed to perform final cleanup on destination"
+    return 1
+  fi
+
+  info "Cleaning up jumpbox"
+  sudo rm -rf /tmp/pg_transfer 2>/dev/null || {
+    warn "Failed to cleanup /tmp/pg_transfer on jumpbox"
+  }
+
+  success "[☑️] Final cleanup completed"
+}
+
 function show_execution_time() {
   local start_time=$1
   local end_time
@@ -979,6 +1015,8 @@ function full_migration() {
   # startdw_dest || return 1
   update_host_key || return 1
   #TODO: On deploy, remove salt-key -d INSTANCE and salt-key -a INSTANCE
+  final_cleanup || return 1
+  
   success "[✅] 🎉 Full migration completed successfully! 🎉"
 }
 
