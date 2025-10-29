@@ -45,7 +45,7 @@ function warn() {
 
 function success() {
   [[ -z "$1" ]] && { err "success: message cannot be empty"; return 1; }
-  printf '%b[%s]: %s%b\n' "${BOLD_GREEN}" "$(date +'%Y-%m-%d %H:%M:%S')" "$*" "${RESET}"
+  printf '%b[%s]: %s%b\n\n' "${BOLD_GREEN}" "$(date +'%Y-%m-%d %H:%M:%S')" "$*" "${RESET}"
 }
 
 function error() {
@@ -102,7 +102,7 @@ function prompt_required_config() {
 }
 
 function validate_environment() {
-  info "Validating environment..."
+  info "[⏳] Validating environment..."
 
   if [[ -z "${SOURCE_HOST}" ]]; then
     error "SOURCE_HOST is required"
@@ -134,11 +134,11 @@ function validate_environment() {
     return 1
   fi
 
-  success "Environment validation passed"
+  success "[☑️] Environment validation passed"
 }
 
 function check_disk_space_source() {
-  info "Checking disk space on source server..."
+  info "[⏳] Checking disk space on source server..."
 
   local available
   available=$(ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "df -BG ${BACKUP_DIR%/*} 2>/dev/null | awk 'NR==2 {print \$4}' | sed 's/G//'")
@@ -152,11 +152,11 @@ function check_disk_space_source() {
     return 1
   fi
 
-  success "Disk space check passed: ${available}GB available on source"
+  success "[☑️] Disk space check passed: ${available}GB available on source"
 }
 
 function check_disk_space_dest() {
-  info "Checking disk space on dest server..."
+  info "[⏳] Checking disk space on dest server..."
 
   local available
   available=$(ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "df -BG ${BACKUP_DIR%/*} 2>/dev/null | awk 'NR==2 {print \$4}' | sed 's/G//'")
@@ -170,7 +170,7 @@ function check_disk_space_dest() {
     return 1
   fi
 
-  success "Disk space check passed: ${available}GB available on dest"
+  success "[☑️] Disk space check passed: ${available}GB available on dest"
 }
 
 function create_backup_directory() {
@@ -184,24 +184,8 @@ function create_backup_directory() {
   success "Backup directory created on source: ${BACKUP_DIR}"
 }
 
-function enable_readonly_mode() {
-  info "Enabling read-only mode on source database..."
-
-  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c \"ALTER SYSTEM SET default_transaction_read_only = on;\"" || {
-    error "Failed to enable read-only mode"
-    return 1
-  }
-
-  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c \"SELECT pg_reload_conf();\"" || {
-    error "Failed to reload configuration"
-    return 1
-  }
-
-  success "Read-only mode enabled"
-}
-
 function export_globals() {
-  info "Exporting global objects..."
+  info "[⏳] Exporting global objects..."
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "pg_dumpall -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} --globals-only -f ${BACKUP_DIR}/globals.sql" || {
     error "Failed to export global objects"
@@ -209,11 +193,11 @@ function export_globals() {
   }
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "sudo chmod 600 ${BACKUP_DIR}/globals.sql"
-  success "Global objects exported"
+  success "[☑️] Global objects exported"
 }
 
 function display_summary() {
-  info "SOURCE Database cluster summary:"
+  info "[ℹ️] SOURCE Database cluster summary:"
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} postgres -p ${SOURCE_PORT} -c \"
     SELECT datname, pg_size_pretty(pg_database_size(datname)) AS size
@@ -227,7 +211,7 @@ function display_summary() {
 }
 
 function display_summary_dest() {
-  info "DEST Database cluster summary:"
+  info "[ℹ️] DEST Database cluster summary:"
 
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c \"
     SELECT datname, pg_size_pretty(pg_database_size(datname)) AS size
@@ -241,7 +225,7 @@ function display_summary_dest() {
 }
 
 function set_maintenance_settings() {
-  info "Setting temporary maintenance settings..."
+  info "[⏳] Setting temporary maintenance settings..."
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
     psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET maintenance_work_mem = '2GB';" && \
@@ -257,11 +241,11 @@ ENDSSH
     return 1
   fi
 
-  success "Maintenance settings applied"
+  success "[☑️] Maintenance settings applied"
 }
 
 function revert_maintenance_settings() {
-  info "Reverting maintenance settings to defaults..."
+  info "[⏳] Reverting maintenance settings to defaults..."
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
     psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM RESET maintenance_work_mem;" && \
@@ -277,20 +261,18 @@ ENDSSH
     return 1
   fi
 
-  success "Maintenance settings reverted to defaults"
+  success "[☑️] Maintenance settings reverted to defaults"
 }
 
 function dump_databases() {
   display_summary
-  info "Clearing backup directory..."
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "sudo find ${BACKUP_DIR} -mindepth 1 ! -name 'globals.sql' -exec rm -rf {} + 2>/dev/null || true" || {
     error "Failed to clear backup directory"
     return 1
   }
 
-  success "Backup directory cleared"
-  info "Dumping databases in parallel..."
+  info "[⏳] Dumping databases in parallel..."
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
     databases=\$(psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -t -c "SELECT datname FROM pg_database WHERE datname NOT IN ('template0', 'template1', 'postgres');")
@@ -333,26 +315,33 @@ ENDSSH
     return 1
   fi
 
-  success "All databases dumped successfully"
+  success "[☑️] All databases dumped successfully"
 }
 
 function create_archive() {
-  info "Creating compressed archive on source..."
+  info "[⏳] Creating compressed archive on source..."
+  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
+    function info() {
+      printf '\033[1;34m[%s]: %s\033[0m\n' "\$(date +'%Y-%m-%d %H:%M:%S')" "\$*"
+    }
+    sudo apt install zstd -y -qq > /dev/null 2>&1
+    pg_migration_dir_size=\$(sudo du -sh /tmp/pg_migration)
+    info "  [-] Total size: \$pg_migration_dir_size"
 
-  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}"  bash <<ENDSSH
-    cd /tmp && sudo -u root tar czf pg_dumps.tar.gz pg_migration/
-    sudo chown smoothie:smoothie /tmp/pg_dumps.tar.gz
-    sudo chown smoothie:smoothie /tmp/checksums.txt
+    cd /tmp && sudo -u root tar -I 'zstd -3 -T0' -cf pg_dumps.tar.zst pg_migration/
+    sudo chown smoothie:smoothie /tmp/pg_dumps.tar.zst
 ENDSSH
-  success "Archive created: pg_dumps.tar.gz"
+  success "[☑️] Archive created: /tmp/pg_dumps.tar.zst"
 }
 
 function generate_checksums() {
-  info "Generating checksums on source..."
+  info "[⏳] Generating checksums on source..."
 
-  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "cd /tmp && sudo -u root sha256sum pg_dumps.tar.gz > /tmp/checksums.txt"
-
-  success "Checksums generated"
+  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
+    cd /tmp && sudo -u root sha256sum pg_dumps.tar.zst > /tmp/checksums.txt
+    sudo chown smoothie:smoothie /tmp/checksums.txt
+ENDSSH
+  success "[☑️] Checksums generated: /tmp/checksums.txt"
 }
 
 function transfer_to_destination() {
@@ -386,58 +375,55 @@ function transfer_to_destination() {
     return 1
   }
 
-  info "Pulling files from source to jumpbox..."
+  info "[⏳] Pulling files from source to jumpbox..."
   mkdir -p /tmp/pg_transfer
-  rsync -az --progress -e "ssh -q" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/pg_dumps.tar.gz" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/checksums.txt" /tmp/pg_transfer/ || {
+  rsync -az --progress -e "ssh -q" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/pg_dumps.tar.zst" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/checksums.txt" /tmp/pg_transfer/ || {
     error "Failed to pull from source"
     return 1
   }
 
-  info "Pushing files from jumpbox to destination..."
-  rsync -az --progress -e "ssh -q" /tmp/pg_transfer/pg_dumps.tar.gz /tmp/pg_transfer/checksums.txt "${DEST_SSH_USER}@${DEST_HOST}:/tmp/" || {
+  info "[⏳] Pushing files from jumpbox to destination..."
+  rsync -az --progress -e "ssh -q" /tmp/pg_transfer/pg_dumps.tar.zst /tmp/pg_transfer/checksums.txt "${DEST_SSH_USER}@${DEST_HOST}:/tmp/" || {
     error "Failed to push to destination"
     return 1
   }
 
   rm -rf /tmp/pg_transfer
-  success "Transfer completed"
+  success "[☑️] Transfer completed"
 }
 
 function validate_checksums() {
-  info "Validating checksums on destination..."
+  info "[⏳] Validating checksums on destination..."
 
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "cd /tmp && sha256sum -c checksums.txt" || {
     error "Checksum validation failed"
     return 1
   }
 
-  success "Checksums validated"
+  success "[☑️] Checksums validated"
 }
 
 function extract_archive() {
-  info "Extracting archive on destination..."
-
-  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "cd /tmp && sudo -u root tar xzf pg_dumps.tar.gz" || {
-    error "Failed to extract archive"
-    return 1
-  }
-
-  success "Archive extracted"
+  info "[⏳] Extracting archive on destination..."
+  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
+    sudo apt install zstd -y -qq > /dev/null 2>&1
+    sleep 1
+    cd /tmp && sudo -u root tar -I zstd -xf pg_dumps.tar.zst
+ENDSSH
+  success "[☑️] Archive extracted"
 }
 
 function restore_globals() {
-  info "Restoring global objects..."
+  info "[⏳] Restoring global objects..."
 
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -v ON_ERROR_STOP=0 -f ${BACKUP_DIR}/globals.sql" || {
     warn "Some global objects already exist (this is normal)"
   }
 
-  success "Global objects restored"
+  success "[☑️] Global objects restored"
 }
 
 function restore_databases() {
-  info "Restoring databases in parallel..."
-
   local databases
   databases=$(ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "ls -d ${BACKUP_DIR}/*.dump 2>/dev/null" | xargs -n1 basename | sed 's/.dump$//')
   if [[ -z "${databases}" ]]; then
@@ -445,8 +431,14 @@ function restore_databases() {
     return 0
   fi
 
-  echo "FOUND THESE DATABASES TO RESTORE: ${databases}"
+  echo -e "-------------------------------------"
+  echo -e "-- SUMMARY OF DATABASES TO RESTORE --"
+  echo -e "-------------------------------------"
+  echo -e "${databases}"
+  echo -e "-------------------------------------"
+  echo ""
 
+  info "[⏳] Restoring databases in parallel..."
   for db in ${databases}; do
     info "Restoring database: ${db}"
     ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
@@ -460,11 +452,11 @@ ENDSSH
     fi
   done
 
-  success "All databases restored"
+  success "[☑️] All databases restored"
 }
 
 function run_analyze() {
-  info "Running ANALYZE on all databases..."
+  info "[⏳] Running ANALYZE on all databases..."
 
   local databases
   databases=$(ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -t -c \"SELECT datname FROM pg_database WHERE datname NOT IN ('template0', 'template1', 'postgres');\"")
@@ -476,11 +468,11 @@ function run_analyze() {
     }
   done
 
-  success "ANALYZE completed"
+  success "[☑️] ANALYZE completed"
 }
 
 function run_vacuum() {
-  info "Running VACUUM ANALYZE on all databases..."
+  info "[⏳] Running VACUUM ANALYZE on all databases..."
 
   local databases
   databases=$(ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -t -c \"SELECT datname FROM pg_database WHERE datname NOT IN ('template0', 'template1', 'postgres');\"")
@@ -492,11 +484,11 @@ function run_vacuum() {
     }
   done
 
-  success "VACUUM completed"
+  success "[☑️] VACUUM completed"
 }
 
 function run_reindex() {
-  info "Running REINDEX on all databases..."
+  info "[⏳] Running REINDEX on all databases..."
 
   local databases
   databases=$(ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -t -c \"SELECT datname FROM pg_database WHERE datname NOT IN ('template0', 'template1', 'postgres');\"")
@@ -508,11 +500,11 @@ function run_reindex() {
     }
   done
 
-  success "REINDEX completed"
+  success "[☑️] REINDEX completed"
 }
 
 function validate_row_counts() {
-  info "Validating table row counts..."
+  info "[⏳] Validating table row counts..."
 
   local databases
   databases=$(ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -t -c \"SELECT datname FROM pg_database WHERE datname NOT IN ('template0', 'template1', 'postgres');\"")
@@ -524,11 +516,11 @@ function validate_row_counts() {
     }
   done
 
-  success "Row count validation completed"
+  success "[☑️] Row count validation completed"
 }
 
 function validate_constraints() {
-  info "Validating constraints..."
+  info "[⏳] Validating constraints..."
 
   local databases
   databases=$(ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -t -c \"SELECT datname FROM pg_database WHERE datname NOT IN ('template0', 'template1', 'postgres');\"")
@@ -540,11 +532,11 @@ function validate_constraints() {
     }
   done
 
-  success "Constraint validation completed"
+  success "[☑️] Constraint validation completed"
 }
 
 function validate_extensions() {
-  info "Validating extensions..."
+  info "[⏳] Validating extensions..."
 
   local databases
   databases=$(ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -t -c \"SELECT datname FROM pg_database WHERE datname NOT IN ('template0', 'template1', 'postgres');\"")
@@ -556,11 +548,11 @@ function validate_extensions() {
     }
   done
 
-  success "Extension validation completed"
+  success "[☑️] Extension validation completed"
 }
 
 function stopdw_source() {
-  info "Stopping DW on SOURCE..."
+  info "[⏳] Stopping DW on SOURCE..."
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "sudo -u smoothie stopdw" || {
     error "Execution of stopdw failed."
@@ -569,7 +561,7 @@ function stopdw_source() {
 }
 
 function stopdw_dest() {
-  info "Stopping DW on DEST..."
+  info "[⏳] Stopping DW on DEST..."
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo -u smoothie stopdw" || {
     error "Execution of stopdw failed."
     return 1
@@ -577,7 +569,7 @@ function stopdw_dest() {
 }
 
 function startdw_source() {
-  info "Starting DW on SOURCE..."
+  info "[⏳] Starting DW on SOURCE..."
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "sudo -u smoothie startdw" || {
     error "Execution of startdw failed."
@@ -586,7 +578,7 @@ function startdw_source() {
 }
 
 function startdw_dest() {
-  info "Starting DW on DEST..."
+  info "[⏳] Starting DW on DEST..."
 
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo -u smoothie startdw" || {
     error "Execution of startdw failed."
@@ -595,12 +587,16 @@ function startdw_dest() {
 }
 
 function update_host_key() {
-  info "Updating host key for ${SOURCE_HOST}..."
+  info "[⏳] Updating host key for ${SOURCE_HOST}..."
+
+  # TODO: $SOURCE_HOST WILL MOST LIKELY BE AN IP ADDRESS, ENSURE THAT 
+  #       IT RESOLVES TO HOST NAME BY GETTING THE HOST ENTRY ON LASTION FROM /etc/hosts
+  # THE BELOW SCRIPT EXPECTS THE HOSTNAME, NOT THE IP
   sudo /home/smoothie/update_known_hosts.sh $SOURCE_HOST
 }
 
 function backup_server_files() {
-  info "Backing up server files on source..."
+  info "[⏳] Backing up server files on source..."
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
     function info() {
       printf '%b[%s]: %s%b\n' "\033[1;34m" "\$(date +'%Y-%m-%d %H:%M:%S')" "\$*" "\033[0m"
@@ -612,7 +608,7 @@ function backup_server_files() {
       printf '%b[%s]: %s%b\n' "\033[1;31m" "\$(date +'%Y-%m-%d %H:%M:%S')" "\$*" "\033[0m" >&2
     }
     function success() {
-      printf '%b[%s]: %s%b\n' "\033[1;32m" "\$(date +'%Y-%m-%d %H:%M:%S')" "\$*" "\033[0m"
+      printf '%b[%s]: %s%b\n\n' "\033[1;32m" "\$(date +'%Y-%m-%d %H:%M:%S')" "\$*" "\033[0m"
     }
 
     mkdir -p "${SERVER_FILES_BACKUP_DIR}" || {
@@ -640,12 +636,12 @@ function backup_server_files() {
       warn "Failed to copy SSH host keys (may not have permissions)"
     }
 
-    success "Server files backup completed. Files stored in: ${SERVER_FILES_BACKUP_DIR}"
+    success "[☑️] Server files backup completed. Files stored in: ${SERVER_FILES_BACKUP_DIR}"
 ENDSSH
 }
 
 function restore_server_files() {
-  info "Restoring server files from jumpbox to destination..."
+  info "[⏳] Restoring server files from jumpbox to destination..."
 
   if [[ ! -d "${SERVER_FILES_BACKUP_DIR}" ]]; then
     error "Server files backup directory does not exist: ${SERVER_FILES_BACKUP_DIR}"
@@ -662,19 +658,19 @@ function restore_server_files() {
 
   info "Found ${file_count} files to restore"
 
-  info "Creating necessary directories on destination..."
+  info "[⏳] Creating necessary directories on destination..."
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo mkdir -p /opt /etc/default /home/smoothie/Scripts /etc/ssh" || {
     error "Failed to create directories on destination"
     return 1
   }
 
-  info "Restoring files to destination..."
+  info "[⏳] Restoring files to destination..."
   rsync -avPHz --relative "${SERVER_FILES_BACKUP_DIR}/"* "${DEST_SSH_USER}@${DEST_HOST}:/tmp/server_files_restore/" || {
     error "Failed to copy files to destination"
     return 1
   }
 
-  info "Moving files to final locations on destination (requires sudo)..."
+  info "[⏳] Moving files to final locations on destination (requires sudo)..."
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<'ENDSSH'
     if [[ -d /tmp/server_files_restore ]]; then
       sudo find /tmp/server_files_restore -name "ssh_host*" -exec mv {} /etc/ssh/ \; 2>/dev/null
@@ -689,19 +685,17 @@ ENDSSH
     return 1
   fi
 
-  success "Server files restored to destination"
+  success "[☑️] Server files restored to destination"
 }
 
 function rename_smoothie_folder() {
-  info "Renaming smoothie11 folder on destination..."
-
-  info "Renaming /opt/smoothie11 to /opt/smoothie11_old..."
+  info "[⏳] Renaming /opt/smoothie11 to /opt/smoothie11_old on destination..."
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo mv /opt/smoothie11 /opt/smoothie11_old" || {
     error "Failed to rename /opt/smoothie11 to /opt/smoothie11_old"
     return 1
   }
 
-  success "Successfully renamed /opt/smoothie11 to /opt/smoothie11_old"
+  success "[☑️] Successfully renamed /opt/smoothie11 to /opt/smoothie11_old"
 }
 
 function setup_bi_cube() {
@@ -715,7 +709,7 @@ function setup_bi_cube() {
 
   success "/etc/profile.d/ibp.sh found on source - proceeding with bi_cube setup"
 
-  info "Backing up bi_cube files from source..."
+  info "[⏳] Backing up bi_cube files from source..."
   rsync -avPHz --relative /home/smoothie/bi_cube* "${SERVER_FILES_BACKUP_DIR}/" || {
     warn "Failed to copy bi_cube files from /home/smoothie/ (may not exist)"
   }
@@ -724,7 +718,7 @@ function setup_bi_cube() {
     warn "Failed to copy ibp files from /etc/profile.d/ (may not exist)"
   }
 
-  success "bi_cube files backed up on source"
+  success "[☑️] bi_cube files backed up on source"
 
 #  info "Transferring bi_cube files to destination..."
 #  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo mkdir -p ${SERVER_FILES_BACKUP_DIR}" || {
@@ -739,7 +733,7 @@ function setup_bi_cube() {
 #
 #  success "bi_cube files transferred to destination"
 
-  info "Setting ownership on destination..."
+  info "[⏳] Setting ownership on destination..."
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<'ENDSSH'
     # Set ownership for ibp files
     if ls /tmp/pg_migration/server_files/etc/profile.d/ibp* 1> /dev/null 2>&1; then
@@ -764,14 +758,14 @@ ENDSSH
     return 1
   fi
 
-  success "Ownership set successfully"
+  success "[☑️] Ownership set successfully"
 
-  info "Cleaning up old bi_cube installation..."
+  info "[⏳] Cleaning up old bi_cube installation..."
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo rm -rf /opt/bi_cube_ip_whitelist/{bin,lib}" || {
     warn "Failed to remove old bi_cube directories (may not exist)"
   }
 
-  info "Installing python3-venv on destination..."
+  info "[⏳] Installing python3-venv on destination..."
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo apt install -y python3-venv" || {
     error "Failed to install python3-venv"
     return 1
@@ -779,7 +773,7 @@ ENDSSH
 
   success "python3-venv installed"
 
-  info "Creating Python virtual environment..."
+  info "[⏳] Creating Python virtual environment..."
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<'ENDSSH'
     # Create venv
     sudo python3 -m venv /opt/bi_cube_ip_whitelist/ || exit 1
@@ -798,7 +792,7 @@ ENDSSH
 }
 
 function sync_timezone() {
-  info "Synchronizing timezone from source to destination..."
+  info "[⏳] Synchronizing timezone from source to destination..."
 
   info "Reading timezone from source server..."
   local source_timezone
@@ -829,22 +823,22 @@ function sync_timezone() {
   fi
 
   if [[ "${source_timezone}" == "${dest_timezone}" ]]; then
-    success "Timezones already match - no changes needed"
+    success "[☑️] Timezones already match - no changes needed"
     return 0
   fi
 
-  info "Setting timezone on destination to: ${source_timezone}"
+  info "[⏳] Setting timezone on destination to: ${source_timezone}"
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo timedatectl set-timezone ${source_timezone}" || {
     error "Failed to set timezone on destination"
     return 1
   }
 
-  info "Verifying timezone change..."
+  info "[⏳] Verifying timezone change..."
   local new_timezone
   new_timezone=$(ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "timedatectl show -p Timezone --value 2>/dev/null")
 
   if [[ "${new_timezone}" == "${source_timezone}" ]]; then
-    success "Timezone successfully synchronized to: ${source_timezone}"
+    success "[☑️] Timezone successfully synchronized to: ${source_timezone}"
   else
     error "Timezone verification failed. Expected: ${source_timezone}, Got: ${new_timezone}"
     return 1
@@ -878,7 +872,7 @@ function show_execution_time() {
 }
 
 function full_migration() {
-  info "Starting full migration process..."
+  info "[⏳] Starting full migration process..."
 
   validate_environment || return 1
   check_disk_space_source || return 1
@@ -890,7 +884,7 @@ function full_migration() {
   export_globals || return 1
   dump_databases || return 1
   backup_server_files || return 1
-  startdw_source || return 1
+  # startdw_source || return 1
   create_archive || return 1
   generate_checksums || return 1
   transfer_to_destination || return 1
@@ -906,14 +900,15 @@ function full_migration() {
   validate_extensions || return 1
   revert_maintenance_settings || return 1
   rename_smoothie_folder || return 1
-  restore_server_files || return 1
-  setup_bi_cube || return 1
+  # restore_server_files || return 1
+  # setup_bi_cube || return 1
   sync_timezone || return 1
+  #TODO: Add function to update /etc/hosts on dest
   display_summary_dest || return 1
   startdw_dest || return 1
   update_host_key || return 1
-
-  success "Full migration completed successfully!"
+  #TODO: On deploy, remove salt-key -d INSTANCE and salt-key -a INSTANCE
+  success "[✅] 🎉 Full migration completed successfully! 🎉"
 }
 
 function show_menu() {
