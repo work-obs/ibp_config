@@ -228,8 +228,14 @@ function set_maintenance_settings_source() {
   info "[⏳] Setting temporary maintenance settings on source..."
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
+    function info() {
+      printf '\033[1;34m[%s]: %s\033[0m\n' "\$(date +'%Y-%m-%d %H:%M:%S')" "\$*"
+    }
+
     cpu_cores=\$(nproc)
     half_cores=\$((cpu_cores / 2))
+    info " [-] Detected CPU Cores: \$cpu_cores"
+    
     psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET maintenance_work_mem = '2GB';" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET max_parallel_maintenance_workers = \${cpu_cores};" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET max_parallel_workers_per_gather = \${half_cores};" && \
@@ -250,8 +256,14 @@ function set_maintenance_settings_dest() {
   info "[⏳] Setting temporary maintenance settings on destination..."
 
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
+    function info() {
+      printf '\033[1;34m[%s]: %s\033[0m\n' "\$(date +'%Y-%m-%d %H:%M:%S')" "\$*"
+    }
+
     cpu_cores=\$(nproc)
     half_cores=\$((cpu_cores / 2))
+    info " [-] Detected CPU Cores: \$cpu_cores"
+
     psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET maintenance_work_mem = '2GB';" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET max_parallel_maintenance_workers = \${cpu_cores};" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p 27095 -c "ALTER SYSTEM SET max_parallel_workers_per_gather = \${half_cores};" && \
