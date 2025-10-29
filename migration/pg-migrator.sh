@@ -644,11 +644,14 @@ function startdw_dest() {
 
 function update_host_key() {
   info "[⏳] Updating host key for ${SOURCE_HOST}..."
+  local source_hostname
+  source_hostname=$(grep -i "${SOURCE_HOST}" /etc/hosts | awk '{print $2}')
+  sudo /home/smoothie/update_known_hosts.sh $source_hostname || {
+    error "Failed to update host key for ${source_hostname}"
+    return 1
+  }
 
-  # TODO: $SOURCE_HOST WILL MOST LIKELY BE AN IP ADDRESS, ENSURE THAT 
-  #       IT RESOLVES TO HOST NAME BY GETTING THE HOST ENTRY ON LASTION FROM /etc/hosts
-  # THE BELOW SCRIPT EXPECTS THE HOSTNAME, NOT THE IP
-  sudo /home/smoothie/update_known_hosts.sh $SOURCE_HOST
+  success "[☑️] Updated host key for $source_hostname"
 }
 
 function backup_server_files() {
@@ -697,61 +700,37 @@ ENDSSH
 }
 
 function restore_server_files() {
-  info "[⏳] Restoring server files from jumpbox to destination..."
+  info "[⏳] Moving server files to final locations on destination..."
 
-  if [[ ! -d "${SERVER_FILES_BACKUP_DIR}" ]]; then
-    error "Server files backup directory does not exist: ${SERVER_FILES_BACKUP_DIR}"
-    return 1
-  fi
-
-  local file_count
-  file_count=$(find "${SERVER_FILES_BACKUP_DIR}" -type f 2>/dev/null | wc -l)
-
-  if (( file_count == 0 )); then
-    warn "No files found in backup directory to restore"
-    return 0
-  fi
-
-  info "Found ${file_count} files to restore"
-
-  info "[⏳] Creating necessary directories on destination..."
-  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo mkdir -p /opt /etc/default /home/smoothie/Scripts /etc/ssh" || {
-    error "Failed to create directories on destination"
-    return 1
-  }
-
-  info "[⏳] Restoring files to destination..."
-  rsync -avPHz --relative "${SERVER_FILES_BACKUP_DIR}/"* "${DEST_SSH_USER}@${DEST_HOST}:/tmp/server_files_restore/" || {
-    error "Failed to copy files to destination"
-    return 1
-  }
-
-  info "[⏳] Moving files to final locations on destination (requires sudo)..."
-  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
-    if [[ -d /tmp/server_files_restore ]]; then
-      sudo find /tmp/server_files_restore -name "ssh_host*" -exec mv {} /etc/ssh/ \; 2>/dev/null
-      sudo find /tmp/server_files_restore -name "jetty" -exec mv {} /etc/default/ \; 2>/dev/null
-      sudo find /tmp/server_files_restore -type f ! -name "ssh_host*" ! -name "jetty" -exec mv {} /opt/ \; 2>/dev/null
-      sudo rm -rf /tmp/server_files_restore
-    fi
+  ssh -q "${DEST_SSH_USER}@${DEST_HOST}"  bash <<ENDSSH
+    sudo -u root rsync -avPHz ${SERVER_FILES_BACKUP_DIR}/etc/default/jetty /etc/default/
+    sudo -u root rsync -avPHz ${SERVER_FILES_BACKUP_DIR}/etc/ssh/ /etc/ssh/
+    sudo -u root rsync -avPHz ${SERVER_FILES_BACKUP_DIR}/home/ /home/
+    sudo -u root rsync -avPHz ${SERVER_FILES_BACKUP_DIR}/opt/ /opt/
 ENDSSH
 
   if [[ $? -ne 0 ]]; then
-    error "Failed to move files to final locations on destination"
+    error "Failed to move server files to final locations on destination"
     return 1
   fi
 
-  success "[☑️] Server files restored to destination"
+  success "[☑️] Server files restored to destinations"
 }
 
 function rename_smoothie_folder() {
   info "[⏳] Renaming /opt/smoothie11 to /opt/smoothie11_old on destination..."
-  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo mv /opt/smoothie11 /opt/smoothie11_old" || {
-    error "Failed to rename /opt/smoothie11 to /opt/smoothie11_old"
-    return 1
-  }
-
-  success "[☑️] Successfully renamed /opt/smoothie11 to /opt/smoothie11_old"
+  
+  if ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "test -d /opt/smoothie11"; then
+    ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo mv /opt/smoothie11 /opt/smoothie11_old" || {
+      error "Failed to rename /opt/smoothie11 to /opt/smoothie11_old"
+      return 1
+    }
+    success "[☑️] Successfully renamed /opt/smoothie11 to /opt/smoothie11_old"
+  elif ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "test -d /opt/smoothie11_old"; then
+    success "[☑️] /opt/smoothie11_old already exists - skipping rename"
+  else
+    warn "Neither /opt/smoothie11 nor /opt/smoothie11_old exists - skipping rename"
+  fi
 }
 
 function setup_bi_cube() {
@@ -903,6 +882,33 @@ function sync_timezone() {
   return 0
 }
 
+function update_hosts_file_dest() {
+  info "[⏳] Retrieving source hostname from /etc/hosts..."
+  local source_hostname
+  source_hostname=$(grep -i "${SOURCE_HOST}" /etc/hosts | awk '{print $2}')
+
+  if [[ -z "${source_hostname}" ]]; then
+    error "Failed to retrieve hostname for ${SOURCE_HOST} from lastion /etc/hosts"
+    return 1
+  fi
+
+  success "Source hostname: ${source_hostname}"
+
+  info "[⏳] Updating /etc/hosts file on destination..."
+  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
+    sudo hostnamectl set-hostname "${source_hostname}"
+    sudo sed -i '/^127.0.0.1.*localhost/d' /etc/hosts
+    echo "127.0.0.1 localhost ${source_hostname}" | sudo tee -a /etc/hosts > /dev/null
+ENDSSH
+
+  if [[ $? -ne 0 ]]; then
+    error "Failed to update /etc/hosts file on destination"
+    return 1
+  fi
+
+  success "[☑️] /etc/hosts file updated successfully"
+}
+
 function show_execution_time() {
   local start_time=$1
   local end_time
@@ -939,8 +945,8 @@ function full_migration() {
   set_maintenance_settings_source || return 1
   export_globals || return 1
   dump_databases || return 1
-  backup_server_files || return 1
   revert_maintenance_settings_source || return 1
+  backup_server_files || return 1
   # startdw_source || return 1
   create_archive || return 1
   generate_checksums || return 1
@@ -958,12 +964,12 @@ function full_migration() {
   validate_extensions || return 1
   revert_maintenance_settings_dest || return 1
   rename_smoothie_folder || return 1
-  # restore_server_files || return 1
+  restore_server_files || return 1
   # setup_bi_cube || return 1
   sync_timezone || return 1
-  #TODO: Add function to update /etc/hosts on dest
+  update_hosts_file_dest || return 1
   display_summary_dest || return 1
-  startdw_dest || return 1
+  # startdw_dest || return 1
   update_host_key || return 1
   #TODO: On deploy, remove salt-key -d INSTANCE and salt-key -a INSTANCE
   success "[✅] 🎉 Full migration completed successfully! 🎉"
@@ -993,7 +999,8 @@ function show_menu() {
   printf '%b\n' "${BOLD_GREEN}12)${RESET} Rename Smoothie Folder (DEST)"
   printf '%b\n' "${BOLD_GREEN}13)${RESET} Setup bi_cube (DEST)"
   printf '%b\n' "${BOLD_GREEN}14)${RESET} Sync Timezone (DEST)"
-  printf '%b\n' "${BOLD_GREEN}15)${RESET} Exit"
+  printf '%b\n' "${BOLD_GREEN}15)${RESET} Update /etc/hosts (DEST)"
+  printf '%b\n' "${BOLD_GREEN}16)${RESET} Exit"
   printf '\n'
   printf '%b' "${BOLD_YELLOW}Select option: ${RESET}"
 }
@@ -1059,7 +1066,7 @@ function main() {
         read -p "Press Enter to continue..."
         ;;
       11)
-        restore_server_files
+        rename_smoothie_folder && restore_server_files
         show_execution_time "${start_time}"
         read -p "Press Enter to continue..."
         ;;
@@ -1079,6 +1086,11 @@ function main() {
         read -p "Press Enter to continue..."
         ;;
       15)
+        update_hosts_file_dest
+        show_execution_time "${start_time}"
+        read -p "Press Enter to continue..."
+        ;;
+      16)
         info "Exiting..."
         exit 0
         ;;
