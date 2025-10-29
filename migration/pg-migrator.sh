@@ -329,12 +329,17 @@ function dump_databases() {
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
     databases=\$(psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -t -c "SELECT datname FROM pg_database WHERE datname NOT IN ('template0', 'template1', 'postgres');")
-    echo "FOUND THESE DATABASES TO DUMP: \${databases}"
-
     if [[ -z "\${databases}" ]]; then
       echo "WARN: No user databases found"
       exit 0
     fi
+
+    echo
+    echo "-----------------------"
+    echo "-- DATABASES TO DUMP --"
+    echo "-----------------------"
+    echo "\${databases}"
+    echo "-----------------------"
 
     for db in \${databases}; do
       echo "INFO: Dumping database: \${db}"
@@ -473,8 +478,8 @@ function restore_databases() {
   echo "-------------------------------------"
   echo
 
-  info "[⏳] Restoring databases in parallel..."
-  for db in ${databases}; do
+  info "[⏳] Restoring databases sequentially..."
+  while IFS= read -r db; do
     info "Restoring database: ${db}"
     ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
       psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "DROP DATABASE IF EXISTS ${db};" || exit 1
@@ -485,7 +490,7 @@ ENDSSH
       error "Failed to restore database: ${db}"
       return 1
     fi
-  done
+  done <<< "${databases}"
 
   success "[☑️] All databases restored"
 }
@@ -943,7 +948,9 @@ function show_execution_time() {
 
 function full_migration() {
   info "[⏳] Starting full migration process..."
-
+  local start_time
+  start_time=$(date +%s)
+  
   validate_environment || return 1
   check_disk_space_source || return 1
   check_disk_space_dest || return 1
@@ -951,25 +958,46 @@ function full_migration() {
   stopdw_source || return 1
   stopdw_dest || return 1
   set_maintenance_settings_source || return 1
+  
+  start_time=$(date +%s)
   export_globals || return 1
   dump_databases || return 1
+  show_execution_time "${start_time}"
+
   revert_maintenance_settings_source || return 1
-  backup_server_files || return 1
   # startdw_source || return 1
+
+  start_time=$(date +%s)
+  backup_server_files || return 1
+  show_execution_time "${start_time}"
+
+  start_time=$(date +%s)
   create_archive || return 1
   generate_checksums || return 1
+  show_execution_time "${start_time}"
+
+  start_time=$(date +%s)
   transfer_to_destination || return 1
+  show_execution_time "${start_time}"
+
   validate_checksums || return 1
   extract_archive || return 1
   set_maintenance_settings_dest || return 1
+
+  start_time=$(date +%s)
   restore_globals || return 1
   restore_databases || return 1
+  show_execution_time "${start_time}"
+
+  start_time=$(date +%s)
   run_analyze || return 1
   run_vacuum || return 1
   run_reindex || return 1
   validate_row_counts || return 1
   validate_constraints || return 1
   validate_extensions || return 1
+  show_execution_time "${start_time}"
+
   revert_maintenance_settings_dest || return 1
   rename_smoothie_folder || return 1
   restore_server_files || return 1
