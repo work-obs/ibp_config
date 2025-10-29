@@ -329,14 +329,14 @@ function dump_databases() {
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
     databases=\$(psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -t -c "SELECT datname FROM pg_database WHERE datname NOT IN ('template0', 'template1', 'postgres');")
-    echo "FOUND THESE DATABASES TO DUMP: ${databases}"
+    echo "FOUND THESE DATABASES TO DUMP: \${databases}"
 
     if [[ -z "\${databases}" ]]; then
       echo "WARN: No user databases found"
       exit 0
     fi
 
-    max_concurrent=4
+    max_concurrent=${PARALLEL_JOBS}
     count=0
     pids=()
 
