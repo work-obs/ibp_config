@@ -336,28 +336,10 @@ function dump_databases() {
       exit 0
     fi
 
-    max_concurrent=${PARALLEL_JOBS}
-    count=0
-    pids=()
-
     for db in \${databases}; do
       echo "INFO: Dumping database: \${db}"
       mkdir -p ${BACKUP_DIR}/\${db}.dump
-      pg_dump -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -Fd -j ${PARALLEL_JOBS} -f ${BACKUP_DIR}/\${db}.dump \${db} &
-      pids+=(\$!)
-      ((count++))
-
-      if (( count >= max_concurrent )); then
-        for pid in "\${pids[@]}"; do
-          wait "\${pid}" || exit 1
-        done
-        pids=()
-        count=0
-      fi
-    done
-
-    for pid in "\${pids[@]}"; do
-      wait "\${pid}" || exit 1
+      pg_dump -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -Fd -j ${PARALLEL_JOBS} -f ${BACKUP_DIR}/\${db}.dump \${db} || exit 1
     done
 
     chmod -R 700 ${BACKUP_DIR}/*.dump
