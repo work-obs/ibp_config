@@ -3,7 +3,7 @@
 # Create new EBS volume from golden AMI snapshot matching instance volume properties.
 #
 # Author  : Frank Claassens
-# Created : 28 October 2025
+# Created : Thu 30 October 2025
 #
 
 # Color constants
@@ -32,6 +32,20 @@ function success() {
 function error() {
   [[ -z "$1" ]] && { err "error: message cannot be empty"; return 1; }
   printf '%b[%s]: %s%b\n' "${BOLD_RED}" "$(date +'%Y-%m-%d %H:%M:%S')" "$*" "${RESET}" >&2
+}
+
+function calculate_new_size() {
+  local current_size=$1
+  local increased_size=$(( current_size * 120 / 100 ))
+  local remainder=$(( increased_size % 10 ))
+  
+  if (( remainder == 0 )); then
+    echo "${increased_size}"
+  elif (( remainder <= 5 )); then
+    echo $(( increased_size - remainder + 5 ))
+  else
+    echo $(( increased_size - remainder + 10 ))
+  fi
 }
 
 readonly SNAPSHOT_ID="snap-0aed3f217d1434783"
@@ -85,7 +99,11 @@ function main() {
   local tags
   tags=$(echo "${volume_info}" | jq -c '.[2]')
   
-  info "Volume size: ${volume_size} GB"
+  local new_size
+  new_size=$(calculate_new_size "${volume_size}")
+  
+  info "Current volume size: ${volume_size} GB"
+  info "New volume size: ${new_size} GB"
   info "Availability zone: ${availability_zone}"
   
   local new_name="${instance_name}-u22-prepared"
@@ -96,7 +114,7 @@ function main() {
   info "Tags: ${tag_spec}"
   info "Creating new volume: ${new_name}"
   local new_volume_id
-  new_volume_id=$(aws ec2 create-volume --snapshot-id "${SNAPSHOT_ID}" --volume-type gp3 --size "${volume_size}" --iops 6000 --throughput 256 --availability-zone "${availability_zone}" --tag-specifications "ResourceType=volume,Tags=[${tag_spec}]" --query 'VolumeId' --output text)
+  new_volume_id=$(aws ec2 create-volume --snapshot-id "${SNAPSHOT_ID}" --volume-type gp3 --size "${new_size}" --iops 6000 --throughput 200 --availability-zone "${availability_zone}" --tag-specifications "ResourceType=volume,Tags=[${tag_spec}]" --query 'VolumeId' --output text)
   
   if [[ -z "${new_volume_id}" ]]; then
     error "Failed to create volume"

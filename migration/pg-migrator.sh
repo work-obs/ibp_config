@@ -233,7 +233,7 @@ function set_maintenance_settings_source() {
     parallel_workers=\$((cpu_cores * 3 / 4))
     half_cores=\$((cpu_cores / 2))
     
-    total_ram_gb=\$(free -g | awk '/^Mem:/{print \$2}')
+      
     maintenance_mem=\$((total_ram_gb / 4))
     if (( maintenance_mem < 2 )); then
       maintenance_mem=2
@@ -248,7 +248,7 @@ function set_maintenance_settings_source() {
       shared_buffers=4
     fi
     
-    effective_cache=\$((total_ram_gb * 37.5 / 100))
+    effective_cache=\$((total_ram_gb * 37 / 100))
     if (( effective_cache < 4 )); then
       effective_cache=4
     fi
@@ -272,9 +272,10 @@ function set_maintenance_settings_source() {
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET synchronous_commit = 'off';" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "SELECT pg_reload_conf();"
 
-    sudo systemctl stop postgresql
-    sudo -u ${PG_USER} /usr/lib/postgresql/12/bin/pg_resetwal -D /var/lib/postgresql/12/main --wal-segsize 64
-    sudo systemctl start postgresql
+    # sudo systemctl stop postgresql
+    # sleep 5
+    # sudo -u ${PG_USER} /usr/lib/postgresql/12/bin/pg_resetwal -D /var/lib/postgresql/12/main --wal-segsize 64
+    # sudo systemctl start postgresql
 ENDSSH
 
   if [[ $? -ne 0 ]]; then
@@ -312,7 +313,7 @@ function set_maintenance_settings_dest() {
       shared_buffers=4
     fi
     
-    effective_cache=\$((total_ram_gb * 37.5 / 100))
+    effective_cache=\$((total_ram_gb * 37 / 100))
     if (( effective_cache < 4 )); then
       effective_cache=4
     fi
@@ -336,9 +337,10 @@ function set_maintenance_settings_dest() {
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET synchronous_commit = 'off';" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "SELECT pg_reload_conf();"
 
-    sudo systemctl stop postgresql
-    sudo -u ${PG_USER} /usr/lib/postgresql/14/bin/pg_resetwal -D /var/lib/postgresql/14/main --wal-segsize 64
-    sudo systemctl start postgresql
+    # sudo systemctl stop postgresql
+    # sleep 5
+    # sudo -u ${PG_USER} /usr/lib/postgresql/14/bin/pg_resetwal -D /var/lib/postgresql/14/main --wal-segsize 64
+    # sudo systemctl start postgresql
 ENDSSH
 
   if [[ $? -ne 0 ]]; then
@@ -1032,10 +1034,7 @@ function sync_timezone() {
   fi
 
   info "[⏳] Setting timezone on destination to: ${source_timezone}"
-  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo timedatectl set-timezone ${source_timezone}" || {
-    error "Failed to set timezone on destination"
-    return 1
-  }
+  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo timedatectl set-timezone ${source_timezone}"
 
   info "[⏳] Verifying timezone change..."
   local new_timezone
