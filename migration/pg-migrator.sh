@@ -489,6 +489,40 @@ function transfer_to_destination() {
     return 1
   }
 
+  info "[⏳] Testing SSH connectivity from source to destination..."
+  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no ${DEST_SSH_USER}@${DEST_HOST} 'echo SSH_OK'" > /dev/null 2>&1
+  
+  if [[ $? -eq 0 ]]; then
+    info "[⚡] Direct transfer available - transferring directly from source to destination..."
+    
+    ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
+      function info() {
+        printf '\033[1;34m[%s]: %s\033[0m\n' "\$(date +'%Y-%m-%d %H:%M:%S')" "\$*"
+      }
+      
+      info "Starting direct rsync from source to destination..."
+      rsync -a --progress --no-compress -e "ssh -o StrictHostKeyChecking=no" \
+        /tmp/pg_dumps.tar.zst \
+        /tmp/checksums.txt \
+        ${DEST_SSH_USER}@${DEST_HOST}:/tmp/ || exit 1
+      
+      info "Direct transfer completed successfully"
+ENDSSH
+
+    if [[ $? -ne 0 ]]; then
+      warn "Direct transfer failed, falling back to two-hop transfer via jumpbox..."
+      transfer_via_jumpbox || return 1
+    else
+      success "[☑️] Direct transfer completed successfully"
+    fi
+  else
+    warn "Direct SSH connection from source to destination not available"
+    info "Falling back to two-hop transfer via jumpbox..."
+    transfer_via_jumpbox || return 1
+  fi
+}
+
+function transfer_via_jumpbox() {
   info "[⏳] Pulling files from source to jumpbox..."
   mkdir -p /tmp/pg_transfer
   rsync -a --progress --no-compress -e "ssh -q" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/pg_dumps.tar.zst" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/checksums.txt" /tmp/pg_transfer/ || {
@@ -503,8 +537,9 @@ function transfer_to_destination() {
   }
 
   rm -rf /tmp/pg_transfer
-  success "[☑️] Transfer completed"
+  success "[☑️] Two-hop transfer completed"
 }
+
 
 function validate_checksums() {
   info "[⏳] Validating checksums on destination..."
