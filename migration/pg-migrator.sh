@@ -1205,7 +1205,7 @@ function full_migration() {
 }
 
 function show_menu() {
-  clear
+  # clear
   printf '%b\n' "${BOLD_CYAN}╔════════════════════════════════════════════════════════╗${RESET}"
   printf '%b\n' "${BOLD_CYAN}║ IBP Migration Tool - Ubuntu 22.04 + PG14 (via Jumpbox) ║${RESET}"
   printf '%b\n' "${BOLD_CYAN}╚════════════════════════════════════════════════════════╝${RESET}"
