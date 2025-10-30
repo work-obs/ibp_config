@@ -6,7 +6,7 @@
 #
 # Author  : Frank Claassens
 # Created : 15 October 2025
-# Updated : Wed 29 October 2025
+# Updated : Thu 30 October 2025
 #
 
 # Colour constants
@@ -248,7 +248,7 @@ function set_maintenance_settings_source() {
       shared_buffers=4
     fi
     
-    effective_cache=\$((total_ram_gb * 3 / 4))
+    effective_cache=\$((total_ram_gb * 37.5 / 100))
     if (( effective_cache < 4 )); then
       effective_cache=4
     fi
@@ -264,12 +264,17 @@ function set_maintenance_settings_source() {
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET max_parallel_maintenance_workers = \${parallel_workers};" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET max_parallel_workers_per_gather = \${half_cores};" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET checkpoint_timeout = '1h';" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET max_wal_size = '64GB';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET max_wal_size = '16GB';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET min_wal_size = '4GB';" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET shared_buffers = '\${shared_buffers}GB';" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET effective_cache_size = '\${effective_cache}GB';" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET wal_compression = 'on';" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET synchronous_commit = 'off';" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "SELECT pg_reload_conf();"
+
+    sudo systemctl stop postgresql
+    sudo -u ${PG_USER} /usr/lib/postgresql/12/bin/pg_resetwal -D /var/lib/postgresql/12/main --wal-segsize 64
+    sudo systemctl start postgresql
 ENDSSH
 
   if [[ $? -ne 0 ]]; then
@@ -307,7 +312,7 @@ function set_maintenance_settings_dest() {
       shared_buffers=4
     fi
     
-    effective_cache=\$((total_ram_gb * 3 / 4))
+    effective_cache=\$((total_ram_gb * 37.5 / 100))
     if (( effective_cache < 4 )); then
       effective_cache=4
     fi
@@ -323,12 +328,17 @@ function set_maintenance_settings_dest() {
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET max_parallel_maintenance_workers = \${parallel_workers};" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET max_parallel_workers_per_gather = \${half_cores};" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET checkpoint_timeout = '1h';" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET max_wal_size = '64GB';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET max_wal_size = '16GB';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET min_wal_size = '4GB';" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET shared_buffers = '\${shared_buffers}GB';" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET effective_cache_size = '\${effective_cache}GB';" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET wal_compression = 'on';" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET synchronous_commit = 'off';" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "SELECT pg_reload_conf();"
+
+    sudo systemctl stop postgresql
+    sudo -u ${PG_USER} /usr/lib/postgresql/14/bin/pg_resetwal -D /var/lib/postgresql/14/main --wal-segsize 64
+    sudo systemctl start postgresql
 ENDSSH
 
   if [[ $? -ne 0 ]]; then
@@ -348,6 +358,7 @@ function revert_maintenance_settings_source() {
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET max_parallel_workers_per_gather;" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET checkpoint_timeout;" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET max_wal_size;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET min_wal_size;" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET shared_buffers;" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET effective_cache_size;" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET wal_compression;" && \
@@ -372,6 +383,7 @@ function revert_maintenance_settings_dest() {
     psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET max_parallel_workers_per_gather;" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET checkpoint_timeout;" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET max_wal_size;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET min_wal_size;" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET shared_buffers;" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET effective_cache_size;" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET wal_compression;" && \
