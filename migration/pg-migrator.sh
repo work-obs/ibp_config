@@ -417,13 +417,13 @@ function transfer_to_destination() {
 
   info "[⏳] Pulling files from source to jumpbox..."
   mkdir -p /tmp/pg_transfer
-  rsync -az --progress -e "ssh -q" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/pg_dumps.tar.zst" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/checksums.txt" /tmp/pg_transfer/ || {
+  rsync -a --progress --no-compress -e "ssh -q" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/pg_dumps.tar.zst" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/checksums.txt" /tmp/pg_transfer/ || {
     error "Failed to pull from source"
     return 1
   }
 
   info "[⏳] Pushing files from jumpbox to destination..."
-  rsync -az --progress -e "ssh -q" /tmp/pg_transfer/pg_dumps.tar.zst /tmp/pg_transfer/checksums.txt "${DEST_SSH_USER}@${DEST_HOST}:/tmp/" || {
+  rsync -a --progress --no-compress -e "ssh -q" /tmp/pg_transfer/pg_dumps.tar.zst /tmp/pg_transfer/checksums.txt "${DEST_SSH_USER}@${DEST_HOST}:/tmp/" || {
     error "Failed to push to destination"
     return 1
   }
@@ -660,27 +660,27 @@ function backup_server_files() {
     }
 
     info "Copying /opt/ from source..."
-    sudo -u root rsync -avPHz --relative /opt/ "${SERVER_FILES_BACKUP_DIR}/" || {
+    sudo -u root rsync -avPH --no-compress --relative /opt/ "${SERVER_FILES_BACKUP_DIR}/" || {
       warn "Failed to copy /opt/* (may not exist or be empty)"
     }
 
     info "Copying /etc/default/jetty from source..."
-    sudo -u root rsync -avPHz --relative /etc/default/jetty "${SERVER_FILES_BACKUP_DIR}/" || {
+    sudo -u root rsync -avPH --no-compress --relative /etc/default/jetty "${SERVER_FILES_BACKUP_DIR}/" || {
       warn "Failed to copy /etc/default/jetty (may not exist)"
     }
 
     info "Copying /home/smoothie/Scripts/* from source..."
-    sudo -u root rsync -avPHz --relative /home/smoothie/Scripts/ "${SERVER_FILES_BACKUP_DIR}/" || {
+    sudo -u root rsync -avPH --no-compress --relative /home/smoothie/Scripts/ "${SERVER_FILES_BACKUP_DIR}/" || {
       warn "Failed to copy /home/smoothie/Scripts/* (may not exist or be empty)"
     }
 
     info "Copying SSH host keys from source..."
-    sudo -u root rsync -avPHz --relative /etc/ssh/ssh_host* "${SERVER_FILES_BACKUP_DIR}/" || {
+    sudo -u root rsync -avPH --no-compress --relative /etc/ssh/ssh_host* "${SERVER_FILES_BACKUP_DIR}/" || {
       warn "Failed to copy SSH host keys (may not have permissions)"
     }
 
     info "Copying salt minion_id file from source..."
-    sudo -u root rsync -avPHz --relative /etc/salt/minion_id "${SERVER_FILES_BACKUP_DIR}/" || {
+    sudo -u root rsync -avPH --no-compress --relative /etc/salt/minion_id "${SERVER_FILES_BACKUP_DIR}/" || {
       warn "Failed to copy salt minion file"
     }
 
@@ -692,11 +692,11 @@ function restore_server_files() {
   info "[⏳] Moving server files to final locations on destination..."
 
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}"  bash <<ENDSSH
-    sudo -u root rsync -avPHz ${SERVER_FILES_BACKUP_DIR}/etc/default/jetty /etc/default/
-    sudo -u root rsync -avPHz ${SERVER_FILES_BACKUP_DIR}/etc/ssh/ /etc/ssh/
-    sudo -u root rsync -avPHz ${SERVER_FILES_BACKUP_DIR}/etc/salt/minion_id /etc/salt/
-    sudo -u root rsync -avPHz ${SERVER_FILES_BACKUP_DIR}/home/ /home/
-    sudo -u root rsync -avPHz ${SERVER_FILES_BACKUP_DIR}/opt/ /opt/
+    sudo -u root rsync -avPH --no-compress ${SERVER_FILES_BACKUP_DIR}/etc/default/jetty /etc/default/
+    sudo -u root rsync -avPH --no-compress ${SERVER_FILES_BACKUP_DIR}/etc/ssh/ /etc/ssh/
+    sudo -u root rsync -avPH --no-compress ${SERVER_FILES_BACKUP_DIR}/etc/salt/minion_id /etc/salt/
+    sudo -u root rsync -avPH --no-compress ${SERVER_FILES_BACKUP_DIR}/home/ /home/
+    sudo -u root rsync -avPH --no-compress ${SERVER_FILES_BACKUP_DIR}/opt/ /opt/
 ENDSSH
 
   if [[ $? -ne 0 ]]; then
@@ -735,14 +735,14 @@ function setup_bi_cube() {
   success "/etc/profile.d/ibp.sh found on source - proceeding with bi_cube setup"
 
   info "[⏳] Backing up bi_cube files from source..."
-  rsync -avPHz --relative /home/smoothie/bi_cube* "${SERVER_FILES_BACKUP_DIR}/" || {
+  rsync -avPH --no-compress --relative /home/smoothie/bi_cube* "${SERVER_FILES_BACKUP_DIR}/" || {
     warn "Failed to copy bi_cube files from /home/smoothie/ (may not exist)"
   }
 
-  rsync -avPHz --relative /etc/profile.d/ibp* "${SERVER_FILES_BACKUP_DIR}/" || {
+  rsync -avPH --no-compress --relative /etc/profile.d/ibp* "${SERVER_FILES_BACKUP_DIR}/" || {
     warn "Failed to copy ibp files from /etc/profile.d/ (may not exist)"
   }
-
+  info "[☑️] bi_cube files successfully backed up on source"  
   success "[☑️] bi_cube files backed up on source"
 
   info "[⏳] Setting ownership on destination..."
