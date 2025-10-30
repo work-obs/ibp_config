@@ -485,7 +485,7 @@ function create_archive() {
     pg_migration_dir_size=\$(sudo du -sh /tmp/pg_migration)
     info "  [-] Total size: \$pg_migration_dir_size"
 
-    cd /tmp && sudo -u root tar -I 'zstd -3 -T0' -cf pg_dumps.tar.zst pg_migration/
+    cd /tmp && sudo -u root tar -I 'zstd -1 -T0' -cf pg_dumps.tar.zst pg_migration/
     sudo chown smoothie:smoothie /tmp/pg_dumps.tar.zst
 ENDSSH
   success "[☑️] Archive created: /tmp/pg_dumps.tar.zst"
@@ -1077,6 +1077,43 @@ ENDSSH
   success "[☑️] Successfully updated /etc/hosts on destination"
 }
 
+function update_bashrc_ps1_dest() {
+  info "[⏳] Updating PS1 prompt in /home/smoothie/.bashrc on destination..."
+
+  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<'ENDSSH'
+    hostname=$(hostnamectl hostname 2>/dev/null || cat /etc/hostname)
+    echo " [-] HOSTNAME: ${hostname}"
+    echo
+
+    if [[ -z "${hostname}" ]]; then
+      echo "ERROR: Failed to retrieve hostname"
+      exit 1
+    fi
+
+    if grep -q 'PS1="basearm-' /home/smoothie/.bashrc; then
+      sed -i "s|PS1=\"basearm-[^\\]*\\\\w> \"|PS1=\"${hostname}\\\\w> \"|" /home/smoothie/.bashrc
+      
+      if grep -q "PS1=\"${hostname}" /home/smoothie/.bashrc; then
+        echo "SUCCESS: PS1 updated to ${hostname}"
+      else
+        echo "ERROR: PS1 update verification failed"
+        exit 1
+      fi
+    else
+      echo "WARN: No basearm PS1 entry found in .bashrc"
+      exit 0
+    fi
+ENDSSH
+
+  if [[ $? -ne 0 ]]; then
+    error "Failed to update PS1 in .bashrc on destination"
+    return 1
+  fi
+
+  success "[☑️] Successfully updated PS1 prompt in .bashrc"
+  info "Note: Changes will take effect on next SSH login"
+}
+
 function final_cleanup() {
   info "[⏳] Performing final cleanup..."
   info "  [-] Cleaning up SOURCE_HOST: ${SOURCE_HOST}"
@@ -1195,6 +1232,7 @@ function full_migration() {
   # setup_bi_cube || return 1
   sync_timezone || return 1
   update_hosts_file_dest || return 1
+  update_bashrc_ps1_dest || return 1
   display_summary_dest || return 1
   # startdw_dest || return 1
   update_host_key || return 1
@@ -1229,7 +1267,8 @@ function show_menu() {
   printf '%b\n' "${BOLD_GREEN}13)${RESET} Setup bi_cube (DEST)"
   printf '%b\n' "${BOLD_GREEN}14)${RESET} Sync Timezone (DEST)"
   printf '%b\n' "${BOLD_GREEN}15)${RESET} Update /etc/hosts (DEST)"
-  printf '%b\n' "${BOLD_GREEN}16)${RESET} Exit"
+  printf '%b\n' "${BOLD_GREEN}16)${RESET} Update .bashrc PS1 Prompt (DEST)"
+  printf '%b\n' "${BOLD_GREEN}17)${RESET} Exit"
   printf '\n'
   printf '%b' "${BOLD_YELLOW}Select option: ${RESET}"
 }
@@ -1320,6 +1359,11 @@ function main() {
         read -p "Press Enter to continue..."
         ;;
       16)
+        update_bashrc_ps1_dest
+        show_execution_time "${start_time}"
+        read -p "Press Enter to continue..."
+        ;;
+      17)
         info "Exiting..."
         exit 0
         ;;
