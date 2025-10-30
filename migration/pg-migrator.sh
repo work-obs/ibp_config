@@ -230,14 +230,45 @@ function set_maintenance_settings_source() {
     }
 
     cpu_cores=\$(nproc)
+    parallel_workers=\$((cpu_cores * 3 / 4))
     half_cores=\$((cpu_cores / 2))
-    info " [-] Detected CPU Cores: \$cpu_cores"
     
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET maintenance_work_mem = '2GB';" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET max_parallel_maintenance_workers = \${cpu_cores};" && \
+    total_ram_gb=\$(free -g | awk '/^Mem:/{print \$2}')
+    maintenance_mem=\$((total_ram_gb / 4))
+    if (( maintenance_mem < 2 )); then
+      maintenance_mem=2
+    elif (( maintenance_mem > 8 )); then
+      maintenance_mem=8
+    fi
+    
+    shared_buffers=\$((total_ram_gb / 4))
+    if (( shared_buffers < 2 )); then
+      shared_buffers=2
+    elif (( shared_buffers > 4 )); then
+      shared_buffers=4
+    fi
+    
+    effective_cache=\$((total_ram_gb * 3 / 4))
+    if (( effective_cache < 4 )); then
+      effective_cache=4
+    fi
+    
+    info " [-] Detected CPU Cores: \$cpu_cores"
+    info " [-] Parallel Workers (75%): \$parallel_workers"
+    info " [-] Total RAM: \${total_ram_gb}GB"
+    info " [-] Maintenance Work Mem: \${maintenance_mem}GB"
+    info " [-] Shared Buffers: \${shared_buffers}GB"
+    info " [-] Effective Cache Size: \${effective_cache}GB"
+    
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET maintenance_work_mem = '\${maintenance_mem}GB';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET max_parallel_maintenance_workers = \${parallel_workers};" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET max_parallel_workers_per_gather = \${half_cores};" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET checkpoint_timeout = '1h';" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET max_wal_size = '64GB';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET shared_buffers = '\${shared_buffers}GB';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET effective_cache_size = '\${effective_cache}GB';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET wal_compression = 'on';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET synchronous_commit = 'off';" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "SELECT pg_reload_conf();"
 ENDSSH
 
@@ -249,6 +280,7 @@ ENDSSH
   success "[☑️] Maintenance settings applied on source"
 }
 
+
 function set_maintenance_settings_dest() {
   info "[⏳] Setting temporary maintenance settings on destination..."
 
@@ -258,27 +290,69 @@ function set_maintenance_settings_dest() {
     }
 
     cpu_cores=\$(nproc)
+    parallel_workers=\$((cpu_cores * 3 / 4))
     half_cores=\$((cpu_cores / 2))
-    info " [-] Detected CPU Cores: \$cpu_cores"
+    
+    total_ram_gb=\$(free -g | awk '/^Mem:/{print \$2}')
+    maintenance_mem=\$((total_ram_gb / 4))
+    if (( maintenance_mem < 2 )); then
+      maintenance_mem=2
+    elif (( maintenance_mem > 8 )); then
+      maintenance_mem=8
+    fi
+    
+    shared_buffers=\$((total_ram_gb / 4))
+    if (( shared_buffers < 2 )); then
+      shared_buffers=2
+    elif (( shared_buffers > 4 )); then
+      shared_buffers=4
+    fi
+    
+    effective_cache=\$((total_ram_gb * 3 / 4))
+function revert_maintenance_settings_source() {
+  info "[⏳] Reverting maintenance settings to defaults on source..."
 
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM SET maintenance_work_mem = '2GB';" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM SET max_parallel_maintenance_workers = \${cpu_cores};" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM SET max_parallel_workers_per_gather = \${half_cores};" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM SET checkpoint_timeout = '1h';" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM SET max_wal_size = '64GB';" && \
+  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET maintenance_work_mem;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET max_parallel_maintenance_workers;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET max_parallel_workers_per_gather;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET checkpoint_timeout;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET max_wal_size;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET shared_buffers;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET effective_cache_size;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET wal_compression;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET synchronous_commit;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "SELECT pg_reload_conf();"
+ENDSSH
+
+  if [[ $? -ne 0 ]]; then
+    error "Failed to revert maintenance settings on source"
+    return 1
+  fi
+function revert_maintenance_settings_dest() {
+  info "[⏳] Reverting maintenance settings to defaults on destination..."
+
+  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET maintenance_work_mem;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET max_parallel_maintenance_workers;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET max_parallel_workers_per_gather;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET checkpoint_timeout;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET max_wal_size;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET shared_buffers;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET effective_cache_size;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET wal_compression;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET synchronous_commit;" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "SELECT pg_reload_conf();"
 ENDSSH
 
   if [[ $? -ne 0 ]]; then
-    error "Failed to set maintenance settings on destination"
+    error "Failed to revert maintenance settings on destination"
     return 1
   fi
 
-  success "[☑️] Maintenance settings applied on destination"
+  success "[☑️] Maintenance settings reverted to defaults on destination"
 }
 
-function revert_maintenance_settings_source() {
-  info "[⏳] Reverting maintenance settings to defaults on source..."
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET maintenance_work_mem;" && \
@@ -742,7 +816,7 @@ function setup_bi_cube() {
   rsync -avPH --no-compress --relative /etc/profile.d/ibp* "${SERVER_FILES_BACKUP_DIR}/" || {
     warn "Failed to copy ibp files from /etc/profile.d/ (may not exist)"
   }
-  info "[☑️] bi_cube files successfully backed up on source"  
+
   success "[☑️] bi_cube files backed up on source"
 
   info "[⏳] Setting ownership on destination..."
