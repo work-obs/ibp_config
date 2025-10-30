@@ -23,7 +23,7 @@ DEST_PORT="${DEST_PORT:-27095}"
 DEST_SSH_USER="${DEST_SSH_USER:-smoothie}"
 BACKUP_DIR="${BACKUP_DIR:-/tmp/pg_migration/dumps}"
 SERVER_FILES_BACKUP_DIR="${SERVER_FILES_BACKUP_DIR:-/tmp/pg_migration/server_files}"
-PARALLEL_JOBS="${PARALLEL_JOBS:-4}"
+PARALLEL_JOBS="${PARALLEL_JOBS:-2}"
 PG_USER="postgres"
 
 function err() {
@@ -280,7 +280,6 @@ ENDSSH
   success "[☑️] Maintenance settings applied on source"
 }
 
-
 function set_maintenance_settings_dest() {
   info "[⏳] Setting temporary maintenance settings on destination..."
 
@@ -292,7 +291,7 @@ function set_maintenance_settings_dest() {
     cpu_cores=\$(nproc)
     parallel_workers=\$((cpu_cores * 3 / 4))
     half_cores=\$((cpu_cores / 2))
-    
+
     total_ram_gb=\$(free -g | awk '/^Mem:/{print \$2}')
     maintenance_mem=\$((total_ram_gb / 4))
     if (( maintenance_mem < 2 )); then
@@ -309,6 +308,37 @@ function set_maintenance_settings_dest() {
     fi
     
     effective_cache=\$((total_ram_gb * 3 / 4))
+    if (( effective_cache < 4 )); then
+      effective_cache=4
+    fi
+
+    info " [-] Detected CPU Cores: \$cpu_cores"
+    info " [-] Parallel Workers (75%): \$parallel_workers"
+    info " [-] Total RAM: \${total_ram_gb}GB"
+    info " [-] Maintenance Work Mem: \${maintenance_mem}GB"
+    info " [-] Shared Buffers: \${shared_buffers}GB"
+    info " [-] Effective Cache Size: \${effective_cache}GB"
+    
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET maintenance_work_mem = '\${maintenance_mem}GB';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET max_parallel_maintenance_workers = \${parallel_workers};" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET max_parallel_workers_per_gather = \${half_cores};" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET checkpoint_timeout = '1h';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET max_wal_size = '64GB';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET shared_buffers = '\${shared_buffers}GB';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET effective_cache_size = '\${effective_cache}GB';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET wal_compression = 'on';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET synchronous_commit = 'off';" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "SELECT pg_reload_conf();"
+ENDSSH
+
+  if [[ $? -ne 0 ]]; then
+    error "Failed to set maintenance settings on destination"
+    return 1
+  fi
+
+  success "[☑️] Maintenance settings applied on destination"
+}
+
 function revert_maintenance_settings_source() {
   info "[⏳] Reverting maintenance settings to defaults on source..."
 
@@ -329,44 +359,6 @@ ENDSSH
     error "Failed to revert maintenance settings on source"
     return 1
   fi
-function revert_maintenance_settings_dest() {
-  info "[⏳] Reverting maintenance settings to defaults on destination..."
-
-  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET maintenance_work_mem;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET max_parallel_maintenance_workers;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET max_parallel_workers_per_gather;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET checkpoint_timeout;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET max_wal_size;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET shared_buffers;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET effective_cache_size;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET wal_compression;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET synchronous_commit;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "SELECT pg_reload_conf();"
-ENDSSH
-
-  if [[ $? -ne 0 ]]; then
-    error "Failed to revert maintenance settings on destination"
-    return 1
-  fi
-
-  success "[☑️] Maintenance settings reverted to defaults on destination"
-}
-
-
-  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET maintenance_work_mem;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET max_parallel_maintenance_workers;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET max_parallel_workers_per_gather;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET checkpoint_timeout;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM RESET max_wal_size;" && \
-    psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "SELECT pg_reload_conf();"
-ENDSSH
-
-  if [[ $? -ne 0 ]]; then
-    error "Failed to revert maintenance settings on source"
-    return 1
-  fi
 
   success "[☑️] Maintenance settings reverted to defaults on source"
 }
@@ -380,6 +372,10 @@ function revert_maintenance_settings_dest() {
     psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET max_parallel_workers_per_gather;" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET checkpoint_timeout;" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET max_wal_size;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET shared_buffers;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET effective_cache_size;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET wal_compression;" && \
+    psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "ALTER SYSTEM RESET synchronous_commit;" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "SELECT pg_reload_conf();"
 ENDSSH
 
@@ -414,14 +410,47 @@ function dump_databases() {
     echo "-----------------------"
     echo "\${databases}"
     echo "-----------------------"
+    echo
 
+    cpu_cores=\$(nproc)
+    half_cores=\$((cpu_cores / 2))
+    parallel_jobs=\${half_cores}
+    
+    echo "INFO: Using \${parallel_jobs} parallel jobs per database dump"
+    echo
+    echo "INFO: Starting parallel database dumps..."
+    
+    pids=()
+    failed=0
+    
     for db in \${databases}; do
-      echo "INFO: Dumping database: \${db}"
-      mkdir -p ${BACKUP_DIR}/\${db}.dump
-      pg_dump -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -Fd -j ${PARALLEL_JOBS} -f ${BACKUP_DIR}/\${db}.dump \${db} || exit 1
+      (
+        echo "INFO: [START] Dumping database: \${db}"
+        mkdir -p ${BACKUP_DIR}/\${db}.dump
+        if pg_dump -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -Fd -j 2 -f ${BACKUP_DIR}/\${db}.dump \${db}; then
+          echo "INFO: [DONE] Successfully dumped database: \${db}"
+        else
+          echo "ERROR: [FAILED] Failed to dump database: \${db}"
+          exit 1
+        fi
+      ) &
+      pids+=(\$!)
     done
+    
+    echo "INFO: Waiting for all database dumps to complete..."
+    for pid in "\${pids[@]}"; do
+      if ! wait "\${pid}"; then
+        failed=1
+      fi
+    done
+    
+    if [[ \${failed} -eq 1 ]]; then
+      echo "ERROR: One or more database dumps failed"
+      exit 1
+    fi
 
     chmod -R 700 ${BACKUP_DIR}/*.dump
+    echo "INFO: All database dumps completed successfully"
 ENDSSH
 
   if [[ $? -ne 0 ]]; then
@@ -540,7 +569,6 @@ function transfer_via_jumpbox() {
   success "[☑️] Two-hop transfer completed"
 }
 
-
 function validate_checksums() {
   info "[⏳] Validating checksums on destination..."
 
@@ -587,19 +615,62 @@ function restore_databases() {
   echo "-------------------------------------"
   echo
 
-  info "[⏳] Restoring databases sequentially..."
-  while IFS= read -r db; do
-    info "Restoring database: ${db}"
-    ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
-      psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "DROP DATABASE IF EXISTS ${db};" || exit 1
-      createdb -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} ${db} || exit 1
-      pg_restore -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -j ${PARALLEL_JOBS} -d ${db} ${BACKUP_DIR}/${db}.dump || exit 1
-ENDSSH
-    if [[ $? -ne 0 ]]; then
-      error "Failed to restore database: ${db}"
-      return 1
+  info "[⏳] Restoring databases in parallel..."
+  
+  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
+    databases=\$(ls -d ${BACKUP_DIR}/*.dump 2>/dev/null | xargs -n1 basename | sed 's/.dump\$//')
+    
+    if [[ -z "\${databases}" ]]; then
+      echo "WARN: No database dumps found"
+      exit 0
     fi
-  done <<< "${databases}"
+    
+    cpu_cores=\$(nproc)
+    half_cores=\$((cpu_cores / 2))
+    parallel_jobs=\${half_cores}
+    
+    echo "INFO: Using \${parallel_jobs} parallel jobs per database restore"
+    echo
+    echo "INFO: Starting parallel database restores..."
+    
+    pids=()
+    failed=0
+    
+    for db in \${databases}; do
+      (
+        echo "INFO: [START] Restoring database: \${db}"
+        
+        if psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "DROP DATABASE IF EXISTS \${db};" && \
+           createdb -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} \${db} && \
+           pg_restore -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -j 2 -d \${db} ${BACKUP_DIR}/\${db}.dump; then
+          echo "INFO: [DONE] Successfully restored database: \${db}"
+        else
+          echo "ERROR: [FAILED] Failed to restore database: \${db}"
+          exit 1
+        fi
+      ) &
+      pids+=(\$!)
+    done
+    
+    echo "INFO: Waiting for all database restores to complete..."
+    for pid in "\${pids[@]}"; do
+      if ! wait "\${pid}"; then
+        failed=1
+      fi
+    done
+    
+    if [[ \${failed} -eq 1 ]]; then
+      echo "ERROR: One or more database restores failed"
+      exit 1
+    fi
+    
+    echo "INFO: All database restores completed successfully"
+ENDSSH
+
+  if [[ $? -ne 0 ]]; then
+    error "Database restore failed"
+    return 1
+  fi
 
   success "[☑️] All databases restored"
 }
@@ -1074,7 +1145,7 @@ function full_migration() {
   show_execution_time "${start_time}"
 
   revert_maintenance_settings_source || return 1
-  # startdw_source || return 1
+  startdw_source || return 1
 
   start_time=$(date +%s)
   backup_server_files || return 1
