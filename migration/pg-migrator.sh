@@ -6,7 +6,7 @@
 #
 # Author  : Frank Claassens
 # Created : 15 October 2025
-# Updated : Thu 30 October 2025
+# Updated : Thu 31 October 2025
 #
 
 # Colour constants
@@ -233,7 +233,7 @@ function set_maintenance_settings_source() {
     parallel_workers=\$((cpu_cores * 3 / 4))
     half_cores=\$((cpu_cores / 2))
     
-      
+    total_ram_gb=\$(free -g | awk '/^Mem:/{print \$2}')
     maintenance_mem=\$((total_ram_gb / 4))
     if (( maintenance_mem < 2 )); then
       maintenance_mem=2
@@ -481,11 +481,23 @@ function create_archive() {
     function info() {
       printf '\033[1;34m[%s]: %s\033[0m\n' "\$(date +'%Y-%m-%d %H:%M:%S')" "\$*"
     }
+    
     sudo apt install zstd -y -qq > /dev/null 2>&1
-    pg_migration_dir_size=\$(sudo du -sh /tmp/pg_migration)
-    info "  [-] Total size: \$pg_migration_dir_size"
-
-    cd /tmp && sudo -u root tar --use-compress-program="zstd -T0 -3" -cf -cf pg_dumps.tar.zst pg_migration/
+    
+    info "Archiving database dumps and server files directly..."
+    cd /tmp && sudo -u root tar --use-compress-program="zstd -T0 -3" -cf pg_dumps.tar.zst \\
+      --exclude='pg_migration/server_files' \\
+      pg_migration/ \\
+      --transform 's,^,server_files/,' \\
+      -C / opt/ \\
+      -C / etc/default/jetty \\
+      -C / home/smoothie/Scripts/ \\
+      -C / etc/ssh/ssh_host* \\
+      -C / etc/salt/minion_id 2>/dev/null || true
+    
+    archive_size=\$(du -sh /tmp/pg_dumps.tar.zst | awk '{print \$1}')
+    info "  [-] Archive size: \${archive_size}"
+    
     sudo chown smoothie:smoothie /tmp/pg_dumps.tar.zst
 ENDSSH
   success "[☑️] Archive created: /tmp/pg_dumps.tar.zst"
@@ -503,85 +515,32 @@ ENDSSH
 }
 
 function transfer_to_destination() {
-  info "Transferring archive to destination..."
-
-  if [[ -z "${DEST_HOST}" ]]; then
-    read -p "Destination Host: " DEST_HOST
-    if [[ -z "${DEST_HOST}" ]]; then
-      error "Destination host is required"
-      return 1
-    fi
-  fi
-
-  if [[ -z "${DEST_PORT}" ]]; then
-    read -p "Destination Port [27095]: " input_port
-    DEST_PORT="${input_port:-27095}"
-  fi
-
-  if [[ -z "${DEST_SSH_USER}" ]]; then
-    read -p "Destination SSH User: " DEST_SSH_USER
-    if [[ -z "${DEST_SSH_USER}" ]]; then
-      error "Destination SSH user is required"
-      return 1
-    fi
-  fi
-
-  info "Connecting to ${DEST_SSH_USER}@${DEST_HOST}"
+  info "[⏳] Transferring TAR file: SOURCE ---> JUMPBOX ---> DESTINATION"
 
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "mkdir -p ${BACKUP_DIR} 2>/dev/null" || {
-    error "Failed to create destination directory"
+    error "Failed to create directory '${BACKUP_DIR}' on destination"
     return 1
   }
 
-  info "[⏳] Testing SSH connectivity from source to destination..."
-  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no ${DEST_SSH_USER}@${DEST_HOST} 'echo SSH_OK'" > /dev/null 2>&1
-  
-  if [[ $? -eq 0 ]]; then
-    info "[⚡] Direct transfer available - transferring directly from source to destination..."
-    
-    ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
-      function info() {
-        printf '\033[1;34m[%s]: %s\033[0m\n' "\$(date +'%Y-%m-%d %H:%M:%S')" "\$*"
-      }
-      
-      info "Starting direct rsync from source to destination..."
-      rsync -a --progress --no-compress -e "ssh -o StrictHostKeyChecking=no" \
-        /tmp/pg_dumps.tar.zst \
-        /tmp/checksums.txt \
-        ${DEST_SSH_USER}@${DEST_HOST}:/tmp/ || exit 1
-      
-      info "Direct transfer completed successfully"
-ENDSSH
+  transfer_via_jumpbox || return 1
 
-    if [[ $? -ne 0 ]]; then
-      warn "Direct transfer failed, falling back to two-hop transfer via jumpbox..."
-      transfer_via_jumpbox || return 1
-    else
-      success "[☑️] Direct transfer completed successfully"
-    fi
-  else
-    warn "Direct SSH connection from source to destination not available"
-    info "Falling back to two-hop transfer via jumpbox..."
-    transfer_via_jumpbox || return 1
-  fi
+  success "[☑️] Successfully transferred TAR file to destination..."
 }
 
 function transfer_via_jumpbox() {
-  info "[⏳] Pulling files from source to jumpbox..."
+  info "[⏳] RSYNC: SOURCE ---> JUMPBOX"
   mkdir -p /tmp/pg_transfer
+
   rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable -e "ssh -q" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/pg_dumps.tar.zst" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/checksums.txt" /tmp/pg_transfer/ || {
     error "Failed to pull from source"
     return 1
   }
 
-  info "[⏳] Pushing files from jumpbox to destination..."
+  info "[⏳] RSYNC: JUMPBOX ---> DESTINATION"
   rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable -e "ssh -q" /tmp/pg_transfer/pg_dumps.tar.zst /tmp/pg_transfer/checksums.txt "${DEST_SSH_USER}@${DEST_HOST}:/tmp/" || {
     error "Failed to push to destination"
     return 1
   }
-
-  rm -rf /tmp/pg_transfer
-  success "[☑️] Two-hop transfer completed"
 }
 
 function validate_checksums() {
@@ -805,11 +764,13 @@ function stopdw_dest() {
 
 function startdw_source() {
   info "[⏳] Starting DW on SOURCE..."
-
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "sudo -u smoothie startdw" || {
     error "Execution of startdw failed."
     return 1
   }
+  # NOTE: We want to sleep for 5s before starting the archiving process
+  #       otherwise we overwhelm the startdw process.
+  sleep 5
 }
 
 function startdw_dest() {
@@ -831,56 +792,6 @@ function update_host_key() {
   }
 
   success "[☑️] Updated host key for $source_hostname"
-}
-
-function backup_server_files() {
-  info "[⏳] Backing up server files on source..."
-  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
-    function info() {
-      printf '%b[%s]: %s%b\n' "\033[1;34m" "\$(date +'%Y-%m-%d %H:%M:%S')" "\$*" "\033[0m"
-    }
-    function warn() {
-      printf '%b[%s]: %s%b\n' "\033[1;33m" "\$(date +'%Y-%m-%d %H:%M:%S')" "\$*" "\033[0m"
-    }
-    function error() {
-      printf '%b[%s]: %s%b\n' "\033[1;31m" "\$(date +'%Y-%m-%d %H:%M:%S')" "\$*" "\033[0m" >&2
-    }
-    function success() {
-      printf '%b[%s]: %s%b\n\n' "\033[1;32m" "\$(date +'%Y-%m-%d %H:%M:%S')" "\$*" "\033[0m"
-    }
-
-    mkdir -p "${SERVER_FILES_BACKUP_DIR}" || {
-      error "Failed to create server files backup directory"
-      return 1
-    }
-
-    info "Copying /opt/ from source..."
-    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable --relative /opt/ "${SERVER_FILES_BACKUP_DIR}/" || {
-      warn "Failed to copy /opt/* (may not exist or be empty)"
-    }
-
-    info "Copying /etc/default/jetty from source..."
-    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable --relative /etc/default/jetty "${SERVER_FILES_BACKUP_DIR}/" || {
-      warn "Failed to copy /etc/default/jetty (may not exist)"
-    }
-
-    info "Copying /home/smoothie/Scripts/* from source..."
-    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable --relative /home/smoothie/Scripts/ "${SERVER_FILES_BACKUP_DIR}/" || {
-      warn "Failed to copy /home/smoothie/Scripts/* (may not exist or be empty)"
-    }
-
-    info "Copying SSH host keys from source..."
-    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable --relative /etc/ssh/ssh_host* "${SERVER_FILES_BACKUP_DIR}/" || {
-      warn "Failed to copy SSH host keys (may not have permissions)"
-    }
-
-    info "Copying salt minion_id file from source..."
-    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable --relative /etc/salt/minion_id "${SERVER_FILES_BACKUP_DIR}/" || {
-      warn "Failed to copy salt minion file"
-    }
-
-    success "[☑️] Server files backup completed. Files stored in: ${SERVER_FILES_BACKUP_DIR}"
-ENDSSH
 }
 
 function restore_server_files() {
@@ -1209,10 +1120,6 @@ function full_migration() {
   startdw_source || return 1
 
   start_time=$(date +%s)
-  backup_server_files || return 1
-  show_execution_time "${start_time}" || return 1
-
-  start_time=$(date +%s)
   create_archive || return 1
   generate_checksums || return 1
   show_execution_time "${start_time}" || return 1
@@ -1361,7 +1268,7 @@ function main() {
         read -p "Press Enter to continue..."
         ;;
       11)
-        backup_server_files && rename_smoothie_folder && restore_server_files
+        rename_smoothie_folder && restore_server_files
         show_execution_time "${start_time}"
         read -p "Press Enter to continue..."
         ;;
