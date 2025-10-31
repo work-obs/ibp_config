@@ -1056,7 +1056,7 @@ function reseed_dest_hostkey_to_knownhosts_file() {
 
   sudo -u smoothie ssh-keygen -f "/home/smoothie/.ssh/known_hosts" -R "$DEST_HOST" >/dev/null 2>&1 </dev/null
   sudo -u smoothie ssh-keyscan $DEST_HOST >> "/home/smoothie/.ssh/known_hosts" 2>&1 </dev/null
-  
+
   success "[☑️] Successfully added the destination SSH host key to '/home/smoothie/.ssh/known_hosts'"
 }
 
