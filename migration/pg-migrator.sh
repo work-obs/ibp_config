@@ -186,6 +186,7 @@ function create_backup_directory() {
 }
 
 function export_globals() {
+  echo
   info "[⏳] Exporting global objects..."
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "pg_dumpall -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} --globals-only -f ${BACKUP_DIR}/globals.sql" || {
@@ -226,6 +227,7 @@ function display_summary_dest() {
 }
 
 function set_maintenance_settings_source() {
+  echo
   info "[⏳] Setting temporary maintenance settings on source..."
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
@@ -291,6 +293,7 @@ ENDSSH
 }
 
 function set_maintenance_settings_dest() {
+  echo
   info "[⏳] Setting temporary maintenance settings on destination..."
 
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
