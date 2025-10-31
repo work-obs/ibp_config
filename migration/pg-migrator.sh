@@ -1049,7 +1049,10 @@ function update_bashrc_ps1_dest() {
     fi
 
     if grep -q 'PS1="basearm-' /home/smoothie/.bashrc; then
-      sed -i "s|PS1=\"basearm-[^\\]*\\\\w> \"|PS1=\"${hostname}\\\\w> \"|" /home/smoothie/.bashrc
+      tmpfile=$(mktemp) || exit 1
+      sed "s|PS1=\"basearm-[^\\]*\\\\w> \"|PS1=\"${hostname}\\\\w> \"|" /home/smoothie/.bashrc > "${tmpfile}" || exit 1
+      cat "${tmpfile}" > /home/smoothie/.bashrc || exit 1
+      rm -f "${tmpfile}"
       
       if grep -q "PS1=\"${hostname}" /home/smoothie/.bashrc; then
         echo "SUCCESS: PS1 updated to ${hostname}"
