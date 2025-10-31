@@ -763,7 +763,7 @@ function validate_constraints() {
 
   for db in ${databases}; do
     info " - Checking constraints for database: ${db}"
-    ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -d ${db} -c 'SELECT conname, contype, convalidated FROM pg_constraint;'" || {
+    ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -d ${db} -c 'SELECT conname, contype, convalidated FROM pg_constraint;' 2>/dev/null" || {
       warn "[⚠️] Constraint validation failed for ${db}"
     }
   done
