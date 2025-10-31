@@ -441,7 +441,7 @@ function dump_databases() {
       (
         echo "INFO: [START] Dumping database: \${db}"
         mkdir -p ${BACKUP_DIR}/\${db}.dump
-        if pg_dump -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -Fd -j 2 -f ${BACKUP_DIR}/\${db}.dump \${db}; then
+        if pg_dump -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -Fd -j \${parallel_jobs} -f ${BACKUP_DIR}/\${db}.dump \${db}; then
           echo "INFO: [DONE] Successfully dumped database: \${db}"
         else
           echo "ERROR: [FAILED] Failed to dump database: \${db}"
@@ -657,7 +657,7 @@ function restore_databases() {
         
         if psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "DROP DATABASE IF EXISTS \${db};" && \
            createdb -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} \${db} && \
-           pg_restore -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -j 2 -d \${db} ${BACKUP_DIR}/\${db}.dump; then
+           pg_restore -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -j \${parallel_jobs} -d \${db} ${BACKUP_DIR}/\${db}.dump; then
           echo "INFO: [DONE] Successfully restored database: \${db}"
         else
           echo "ERROR: [FAILED] Failed to restore database: \${db}"
