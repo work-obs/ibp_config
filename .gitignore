@@ -4,3 +4,5 @@ migration/.amazonq
 migration/.amazonq/
 migration/.amazonq/**
 migration/copy-launch-template.sh
+migration/logs
+
