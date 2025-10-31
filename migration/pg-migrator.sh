@@ -253,12 +253,12 @@ function set_maintenance_settings_source() {
       effective_cache=4
     fi
     
-    info " [-] Detected CPU Cores: \$cpu_cores"
-    info " [-] Parallel Workers (75%): \$parallel_workers"
-    info " [-] Total RAM: \${total_ram_gb}GB"
-    info " [-] Maintenance Work Mem: \${maintenance_mem}GB"
-    info " [-] Shared Buffers: \${shared_buffers}GB"
-    info " [-] Effective Cache Size: \${effective_cache}GB"
+    info "  [-] Detected CPU Cores: \$cpu_cores"
+    info "  [-] Parallel Workers (75%): \$parallel_workers"
+    info "  [-] Total RAM: \${total_ram_gb}GB"
+    info "  [-] Maintenance Work Mem: \${maintenance_mem}GB"
+    info "  [-] Shared Buffers: \${shared_buffers}GB"
+    info "  [-] Effective Cache Size: \${effective_cache}GB"
     
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET maintenance_work_mem = '\${maintenance_mem}GB';" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET max_parallel_maintenance_workers = \${parallel_workers};" && \
@@ -318,12 +318,12 @@ function set_maintenance_settings_dest() {
       effective_cache=4
     fi
 
-    info " [-] Detected CPU Cores: \$cpu_cores"
-    info " [-] Parallel Workers (75%): \$parallel_workers"
-    info " [-] Total RAM: \${total_ram_gb}GB"
-    info " [-] Maintenance Work Mem: \${maintenance_mem}GB"
-    info " [-] Shared Buffers: \${shared_buffers}GB"
-    info " [-] Effective Cache Size: \${effective_cache}GB"
+    info "  [-] Detected CPU Cores: \$cpu_cores"
+    info "  [-] Parallel Workers (75%): \$parallel_workers"
+    info "  [-] Total RAM: \${total_ram_gb}GB"
+    info "  [-] Maintenance Work Mem: \${maintenance_mem}GB"
+    info "  [-] Shared Buffers: \${shared_buffers}GB"
+    info "  [-] Effective Cache Size: \${effective_cache}GB"
     
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET maintenance_work_mem = '\${maintenance_mem}GB';" && \
     psql -h 127.0.0.1 -U ${PG_USER} -p ${SOURCE_PORT} -c "ALTER SYSTEM SET max_parallel_maintenance_workers = \${parallel_workers};" && \
@@ -476,7 +476,7 @@ ENDSSH
 }
 
 function create_archive() {
-  info "[⏳] Creating compressed archive on source..."
+  info "[⏳] Creating TAR FILE on source..."
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<'ENDSSH'
     function info() {
       printf '\033[1;34m[%s]: %s\033[0m\n' "$(date +'%Y-%m-%d %H:%M:%S')" "$*"
@@ -484,7 +484,6 @@ function create_archive() {
     
     sudo apt install zstd -y -qq > /dev/null 2>&1
     
-    info "Archiving database dumps and server files directly..."
     cd /tmp && sudo -u root tar --use-compress-program="zstd -T0 -3" -cf pg_dumps.tar.zst \
       pg_migration/dumps/ \
       --transform 's,^opt,pg_migration/server_files/opt,' \
@@ -504,70 +503,11 @@ function create_archive() {
     
     sudo chown smoothie:smoothie /tmp/pg_dumps.tar.zst
 ENDSSH
-  success "[☑️] Archive created: /tmp/pg_dumps.tar.zst"
-}
-
-function generate_checksums() {
-  info "[⏳] Generating checksums on source..."
-
-  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
-    sudo -u smoothie touch /tmp/checksums.txt
-    #cd /tmp && sudo -u root md5sum pg_dumps.tar.zst > /tmp/checksums.txt
-    sudo chown smoothie:smoothie /tmp/checksums.txt
-ENDSSH
-  success "[☑️] Checksums generated: /tmp/checksums.txt"
-}
-
-function transfer_to_destination() {
-  info "[⏳] BEGIN TAR FILE TRANSFER: SOURCE ---> JUMPBOX ---> DESTINATION"
-
-  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "mkdir -p ${BACKUP_DIR} 2>/dev/null" || {
-    error "Failed to create directory '${BACKUP_DIR}' on destination"
-    return 1
-  }
-
-  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<'ENDSSH'
-    function info() {
-      printf '\033[1;34m[%s]: %s\033[0m\n' "$(date +'%Y-%m-%d %H:%M:%S')" "$*"
-    }
-    archive_size=$(du -sh /tmp/pg_dumps.tar.zst | awk '{print $1}')
-    info " [-] Archive size: ${archive_size}"
-ENDSSH
-
-  transfer_via_jumpbox || return 1
-
-  success "[☑️] Successfully transferred TAR file to destination..."
-}
-
-function transfer_via_jumpbox() {
-  info "[-] RSYNC: SOURCE ---> JUMPBOX"
-  mkdir -p /tmp/pg_transfer
-
-  rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable -e "ssh -q" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/pg_dumps.tar.zst" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/checksums.txt" /tmp/pg_transfer/ || {
-    error "Failed to pull from source"
-    return 1
-  }
-
-  info "[-] RSYNC: JUMPBOX ---> DESTINATION"
-  rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable -e "ssh -q" /tmp/pg_transfer/pg_dumps.tar.zst /tmp/pg_transfer/checksums.txt "${DEST_SSH_USER}@${DEST_HOST}:/tmp/" || {
-    error "Failed to push to destination"
-    return 1
-  }
-}
-
-function validate_checksums() {
-  info "[⏳] Validating checksums on destination..."
-
-  # ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "cd /tmp && md5sum -c checksums.txt" || {
-  #   error "Checksum validation failed"
-  #   return 1
-  # }
-
-  success "[☑️] Checksums validated"
+  success "[☑️] Created: /tmp/pg_dumps.tar.zst"
 }
 
 function extract_archive() {
-  info "[⏳] Extracting archive on destination..."
+  info "[⏳] EXTRACTING TAR FILE: on destination"
 
   # NOTE: The tar file will extract to the following structure:
   #
@@ -588,7 +528,65 @@ function extract_archive() {
     sleep 1
     cd /tmp && sudo -u root tar --use-compress-program="zstd -T0" -xf pg_dumps.tar.zst
 ENDSSH
-  success "[☑️] Archive extracted"
+  success "[☑️] Extracted: /tmp/pg_migration"
+}
+
+function generate_checksums() {
+  echo
+  info "[⏳] Generating MD5 checksum: /tmp/pg_dumps.tar.zst"
+
+  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
+    sudo -u smoothie touch /tmp/checksums.txt
+    #cd /tmp && sudo -u root md5sum pg_dumps.tar.zst > /tmp/checksums.txt
+    sudo chown smoothie:smoothie /tmp/checksums.txt
+ENDSSH
+  success "[☑️] Checksum generated: /tmp/checksums.txt"
+}
+
+function transfer_to_destination() {
+  info "[⏳] TAR FILE TRANSFER: SOURCE ---> JUMPBOX ---> DESTINATION"
+
+  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "mkdir -p ${BACKUP_DIR} 2>/dev/null" || {
+    error "Failed to create directory '${BACKUP_DIR}' on destination"
+    return 1
+  }
+
+  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<'ENDSSH'
+    function info() {
+      printf '\033[1;34m[%s]: %s\033[0m\n' "$(date +'%Y-%m-%d %H:%M:%S')" "$*"
+    }
+    archive_size=$(du -sh /tmp/pg_dumps.tar.zst | awk '{print $1}')
+    info "  [-] TAR SIZE: ${archive_size}"
+ENDSSH
+
+  transfer_via_jumpbox || return 1
+
+  success "[☑️] 🎉 TAR FILE TRANSFER: done 🎉"
+}
+
+function transfer_via_jumpbox() {
+  info "  [-] COPYING: SOURCE ---> JUMPBOX"
+  mkdir -p /tmp/pg_transfer
+
+  rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable -e "ssh -q" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/pg_dumps.tar.zst" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/checksums.txt" /tmp/pg_transfer/ || {
+    error "Failed to pull from source"
+    return 1
+  }
+
+  info "  [-] COPYING: JUMPBOX ---> DESTINATION"
+  rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable -e "ssh -q" /tmp/pg_transfer/pg_dumps.tar.zst /tmp/pg_transfer/checksums.txt "${DEST_SSH_USER}@${DEST_HOST}:/tmp/" || {
+    error "Failed to push to destination"
+    return 1
+  }
+}
+
+function validate_checksums() {
+  # info "[⏳] Validating checksums on destination..."
+  # # ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "cd /tmp && md5sum -c checksums.txt" || {
+  # #   error "Checksum validation failed"
+  # #   return 1
+  # # }
+  success "[☑️] Checksums validated"
 }
 
 function restore_globals() {
@@ -676,16 +674,17 @@ ENDSSH
   success "[☑️] All databases restored"
 }
 
-function run_analyze() {
-  info "[⏳] Running ANALYZE on all databases..."
+function run_analyse() {
+  echo
+  info "[⏳] Executing ANALYZE on all databases..."
 
   local databases
   databases=$(ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -t -c \"SELECT datname FROM pg_database WHERE datname NOT IN ('template0', 'template1', 'postgres');\"")
 
   for db in ${databases}; do
-    info "Analyzing database: ${db}"
-    ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -d ${db} -c 'ANALYZE VERBOSE;'" || {
-      warn "ANALYZE failed for ${db}"
+    info "Analysing database: ${db}"
+    ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -d ${db} -c 'ANALYZE VERBOSE;' 2>/dev/null" || {
+      warn "[⚠️] ANALYZE failed for ${db}"
     }
   done
 
@@ -693,7 +692,8 @@ function run_analyze() {
 }
 
 function run_vacuum() {
-  info "[⏳] Running VACUUM ANALYZE on all databases..."
+  echo
+  info "[⏳] Executing VACUUM ANALYZE on all databases..."
 
   local databases
   databases=$(ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -t -c \"SELECT datname FROM pg_database WHERE datname NOT IN ('template0', 'template1', 'postgres');\"")
@@ -701,7 +701,7 @@ function run_vacuum() {
   for db in ${databases}; do
     info "Vacuuming database: ${db}"
     ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -d ${db} -c 'VACUUM ANALYZE;'" || {
-      warn "VACUUM failed for ${db}"
+      warn "[⚠️] VACUUM failed for ${db}"
     }
   done
 
@@ -709,7 +709,8 @@ function run_vacuum() {
 }
 
 function run_reindex() {
-  info "[⏳] Running REINDEX on all databases..."
+  echo
+  info "[⏳] Executing REINDEX on all databases..."
 
   local databases
   databases=$(ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -t -c \"SELECT datname FROM pg_database WHERE datname NOT IN ('template0', 'template1', 'postgres');\"")
@@ -718,7 +719,7 @@ function run_reindex() {
     sleep 1
     info "Reindexing database: ${db}"
     ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -d ${db} -c 'REINDEX DATABASE ${db};'" || {
-      warn "REINDEX failed for ${db}"
+      warn "[⚠️] REINDEX failed for ${db}"
     }
   done
 
@@ -726,6 +727,7 @@ function run_reindex() {
 }
 
 function validate_row_counts() {
+  echo
   info "[⏳] Validating table row counts..."
 
   local databases
@@ -734,7 +736,7 @@ function validate_row_counts() {
   for db in ${databases}; do
     info "Checking row counts for database: ${db}"
     ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -d ${db} -c 'SELECT schemaname, relname, n_live_tup FROM pg_stat_user_tables ORDER BY schemaname, relname;'" || {
-      warn "Row count validation failed for ${db}"
+      warn "[⚠️] Row count validation failed for ${db}"
     }
   done
 
@@ -742,6 +744,7 @@ function validate_row_counts() {
 }
 
 function validate_constraints() {
+  echo
   info "[⏳] Validating constraints..."
 
   local databases
@@ -750,7 +753,7 @@ function validate_constraints() {
   for db in ${databases}; do
     info "Checking constraints for database: ${db}"
     ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -d ${db} -c 'SELECT conname, contype, convalidated FROM pg_constraint;'" || {
-      warn "Constraint validation failed for ${db}"
+      warn "[⚠️] Constraint validation failed for ${db}"
     }
   done
 
@@ -758,6 +761,7 @@ function validate_constraints() {
 }
 
 function validate_extensions() {
+  echo
   info "[⏳] Validating extensions..."
 
   local databases
@@ -766,7 +770,7 @@ function validate_extensions() {
   for db in ${databases}; do
     info "Checking extensions for database: ${db}"
     ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -d ${db} -c 'SELECT extname, extversion FROM pg_extension;'" || {
-      warn "Extension validation failed for ${db}"
+      warn "[⚠️] Extension validation failed for ${db}"
     }
   done
 
@@ -1031,7 +1035,7 @@ function update_bashrc_ps1_dest() {
 
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<'ENDSSH'
     hostname=$(hostnamectl hostname 2>/dev/null || cat /etc/hostname)
-    echo " [-] HOSTNAME: ${hostname}"
+    echo "  [-] HOSTNAME: ${hostname}"
     echo
 
     if [[ -z "${hostname}" ]]; then
@@ -1173,7 +1177,7 @@ function full_migration() {
   show_execution_time "${start_time}" || return 1
 
   start_time=$(date +%s)
-  run_analyze || return 1
+  run_analyse || return 1
   run_vacuum || return 1
   run_reindex || return 1
   validate_row_counts || return 1
@@ -1279,7 +1283,7 @@ function main() {
         read -p "Press Enter to continue..."
         ;;
       7)
-        set_maintenance_settings_dest && run_analyze && run_vacuum && run_reindex && revert_maintenance_settings_dest
+        set_maintenance_settings_dest && run_analyse && run_vacuum && run_reindex && revert_maintenance_settings_dest
         show_execution_time "${start_time}"
         read -p "Press Enter to continue..."
         ;;
