@@ -1,76 +1,45 @@
 #!/bin/bash
 
 # Configuration - directories to check (space-separated)
-DIRECTORIES="/var/log /opt /home"
+DIRECTORIES="/opt /var/lib/postgresql"
 
 # AWS Configuration
 AWS_REGION="us-east-1"
 
-# SSH Configuration
-SSH_USER="ec2-user"
-SSH_KEY="~/.ssh/id_rsa"
 SSH_TIMEOUT=30
-CONNECT_HOST=""
 
 # Get all running EC2 instances in the region
-echo "Fetching running EC2 instances in region $AWS_REGION..."
-INSTANCE_IDS=$(aws ec2 describe-instances \
-    --region "$AWS_REGION" \
-    --filters "Name=instance-state-name,Values=running" \
-    --query "Reservations[].Instances[].InstanceId" \
-    --output text)
-
-if [ -z "$INSTANCE_IDS" ]; then
-    echo "No running instances found in region $AWS_REGION"
+echo "Loading instance IPs"
+. ./instance-ips.sh
+if [ -z "$INSTANCE_IPS" ]; then
+    echo "No running instances found"
     exit 1
 fi
 
-echo "Found instances: $INSTANCE_IDS"
+echo "Found instances: $INSTANCE_IPS"
 echo "----------------------------------------"
 
-# Loop through each instance
-for INSTANCE_ID in $INSTANCE_IDS; do
-    echo "Processing instance: $INSTANCE_ID"
-    
-    # Skip auto-detection if CONNECT_HOST is already set
-    if [ -z "$CONNECT_HOST" ]; then
-        # Get instance public IP or DNS name
-        PUBLIC_IP=$(aws ec2 describe-instances \
-            --region "$AWS_REGION" \
-            --instance-ids "$INSTANCE_ID" \
-            --query "Reservations[].Instances[].PublicIpAddress" \
-            --output text)
-        
-        if [ -z "$PUBLIC_IP" ]; then
-            # Try to get public DNS name if no public IP
-            PUBLIC_DNS=$(aws ec2 describe-instances \
-                --region "$AWS_REGION" \
-                --instance-ids "$INSTANCE_ID" \
-                --query "Reservations[].Instances[].PublicDnsName" \
-                --output text)
-            
-            if [ -n "$PUBLIC_DNS" ]; then
-                CONNECT_HOST="$PUBLIC_DNS"
-            else
-                echo "  No public IP or DNS found for $INSTANCE_ID, skipping..."
-                continue
-            fi
-        else
-            CONNECT_HOST="$PUBLIC_IP"
-        fi
-    fi
-    
-    echo "  Connecting to: $CONNECT_HOST"
+# Function to check directory sizes on a remote ip via SSH
+# Parameters: $1 - hostname and IP address "host|ip"
+function check_directory_sizes() {
+    local host_and_ip="$1"
+    local total_size=0
+
+    local oifs=$IFS
+    IFS='|' read -ra parts <<< "$host_and_ip"
+    IFS=$oifs
+    hostname="$parts[0]"
+    ip="$parts[1]"
+    echo "  Connecting to: $ip"
     
     # SSH to instance and check directory sizes
-    TOTAL_SIZE=0
     for DIR in $DIRECTORIES; do
-        if ssh -o ConnectTimeout=$SSH_TIMEOUT -o StrictHostKeyChecking=no -i "$SSH_KEY" "$SSH_USER@$CONNECT_HOST" "test -d '$DIR'" 2>/dev/null; then
-            SIZE=$(ssh -o ConnectTimeout=$SSH_TIMEOUT -o StrictHostKeyChecking=no -i "$SSH_KEY" "$SSH_USER@$CONNECT_HOST" "du -sb '$DIR' 2>/dev/null | cut -f1" 2>/dev/null)
+        if ssh -o ConnectTimeout=$SSH_TIMEOUT "$ip" "test -d '$DIR'" 2>/dev/null; then
+            SIZE=$(ssh -o ConnectTimeout=$SSH_TIMEOUT "$ip" "du -sb '$DIR' 2>/dev/null | cut -f1" 2>/dev/null)
             if [ -n "$SIZE" ]; then
                 SIZE_MB=$((SIZE / 1024 / 1024))
                 echo "  $DIR: ${SIZE_MB}MB"
-                TOTAL_SIZE=$((TOTAL_SIZE + SIZE))
+                total_size=$((total_size + SIZE))
             else
                 echo "  $DIR: Unable to get size"
             fi
@@ -80,9 +49,16 @@ for INSTANCE_ID in $INSTANCE_IDS; do
     done
     
     # Print total for this server
-    TOTAL_SIZE_MB=$((TOTAL_SIZE / 1024 / 1024))
+    TOTAL_SIZE_MB=$((total_size / 1024 / 1024))
     echo "  TOTAL: ${TOTAL_SIZE_MB}MB"
     echo "----------------------------------------"
+}
+
+# Loop through each instance
+for INSTANCE_IP in $INSTANCE_IPS; do
+    echo "Processing instance: $INSTANCE_IP"
+    check_directory_sizes "$PUBLIC_IP"
+
 done
 
 echo "Directory size check completed!"
