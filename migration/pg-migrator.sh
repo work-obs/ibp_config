@@ -492,6 +492,7 @@ function create_archive() {
       --transform 's,^home/smoothie/Scripts,pg_migration/server_files/home/smoothie/Scripts,' \
       --transform 's,^etc/ssh/ssh_host,pg_migration/server_files/etc/ssh/ssh_host,' \
       --transform 's,^etc/salt/minion_id,pg_migration/server_files/etc/salt/minion_id,' \
+      --exclude='opt/fluent-bit' \
       -C / opt/ \
       -C / etc/default/ jetty \
       -C / home/smoothie/ Scripts/ \
@@ -714,6 +715,7 @@ function run_reindex() {
   databases=$(ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -t -c \"SELECT datname FROM pg_database WHERE datname NOT IN ('template0', 'template1', 'postgres');\"")
 
   for db in ${databases}; do
+    sleep 1
     info "Reindexing database: ${db}"
     ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -d ${db} -c 'REINDEX DATABASE ${db};'" || {
       warn "REINDEX failed for ${db}"
@@ -832,8 +834,8 @@ function restore_server_files() {
 ENDSSH
 
   if [[ $? -ne 0 ]]; then
-    error "Failed to move server files to final locations on destination"
-    return 1
+    warn "[⚠️] Failed to move server files to final locations on destination"
+    return 0
   fi
 
   success "[☑️] Server files restored to destinations"
