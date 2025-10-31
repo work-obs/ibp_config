@@ -1,2 +1,6 @@
-migration/copy-launch-template.sh
 .amazonq
+.amazonq/**
+migration/.amazonq
+migration/.amazonq/
+migration/.amazonq/**
+migration/copy-launch-template.sh
