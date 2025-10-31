@@ -599,7 +599,7 @@ function extract_archive() {
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
     sudo apt install zstd -y -qq > /dev/null 2>&1
     sleep 1
-    cd /tmp && sudo -u root tar -I zstd -xf pg_dumps.tar.zst
+    cd /tmp && sudo -u root tar -I 'zstd -3 -T0' -xf pg_dumps.tar.zst
 ENDSSH
   success "[☑️] Archive extracted"
 }
