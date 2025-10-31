@@ -1027,8 +1027,8 @@ function update_hosts_file_dest() {
 ENDSSH
 
   if [[ $? -ne 0 ]]; then
-    error "Failed to update /etc/hosts file on destination"
-    return 1
+    warn "[⚠️] Failed to update /etc/hosts file on destination"
+    return 0
   fi
 
   success "[☑️] Successfully updated /etc/hosts on destination"
@@ -1067,8 +1067,8 @@ function update_bashrc_ps1_dest() {
 ENDSSH
 
   if [[ $? -ne 0 ]]; then
-    error "Failed to update PS1 in .bashrc on destination"
-    return 1
+    warn "[⚠️] Failed to update PS1 in .bashrc on destination"
+    return 0
   fi
 
   success "[☑️] Successfully updated PS1 prompt in .bashrc"
