@@ -786,6 +786,7 @@ function validate_extensions() {
 }
 
 function stopdw_source() {
+  echo
   info "[⏳] Stopping DW on SOURCE..."
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "sudo -u smoothie stopdw" || {
@@ -795,6 +796,7 @@ function stopdw_source() {
 }
 
 function stopdw_dest() {
+  echo
   info "[⏳] Stopping DW on DEST..."
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo -u smoothie stopdw" || {
     error "Execution of stopdw failed."
@@ -803,6 +805,7 @@ function stopdw_dest() {
 }
 
 function startdw_source() {
+  echo
   info "[⏳] Starting DW on SOURCE..."
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "sudo -u smoothie startdw" || {
     error "Execution of startdw failed."
@@ -814,6 +817,7 @@ function startdw_source() {
 }
 
 function startdw_dest() {
+  echo
   info "[⏳] Starting DW on DEST..."
 
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo -u smoothie startdw" || {
@@ -823,6 +827,7 @@ function startdw_dest() {
 }
 
 function update_host_key() {
+  echo
   info "[⏳] Updating host key for ${SOURCE_HOST}..."
   local source_hostname
   source_hostname=$(grep -i "${SOURCE_HOST}" /etc/hosts | awk '{print $2}')
@@ -835,6 +840,7 @@ function update_host_key() {
 }
 
 function restore_server_files() {
+  echo
   info "[⏳] Moving source files to final locations on destination..."
 
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
