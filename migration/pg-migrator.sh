@@ -539,7 +539,7 @@ ENDSSH
 }
 
 function transfer_via_jumpbox() {
-  info " [-] RSYNC: SOURCE ---> JUMPBOX"
+  info "[-] RSYNC: SOURCE ---> JUMPBOX"
   mkdir -p /tmp/pg_transfer
 
   rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable -e "ssh -q" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/pg_dumps.tar.zst" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/checksums.txt" /tmp/pg_transfer/ || {
@@ -547,7 +547,7 @@ function transfer_via_jumpbox() {
     return 1
   }
 
-  info " [-] RSYNC: JUMPBOX ---> DESTINATION"
+  info "[-] RSYNC: JUMPBOX ---> DESTINATION"
   rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable -e "ssh -q" /tmp/pg_transfer/pg_dumps.tar.zst /tmp/pg_transfer/checksums.txt "${DEST_SSH_USER}@${DEST_HOST}:/tmp/" || {
     error "Failed to push to destination"
     return 1
