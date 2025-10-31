@@ -568,13 +568,13 @@ ENDSSH
 function transfer_via_jumpbox() {
   info "[⏳] Pulling files from source to jumpbox..."
   mkdir -p /tmp/pg_transfer
-  rsync -a --progress --no-compress -e "ssh -q" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/pg_dumps.tar.zst" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/checksums.txt" /tmp/pg_transfer/ || {
+  rsync -a -q -A -X -H --perms --fileflags --links --times --crtimes --recursive --no-compress --inplace --whole-file --protect-args --human-readable -e "ssh -q" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/pg_dumps.tar.zst" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/checksums.txt" /tmp/pg_transfer/ || {
     error "Failed to pull from source"
     return 1
   }
 
   info "[⏳] Pushing files from jumpbox to destination..."
-  rsync -a --progress --no-compress -e "ssh -q" /tmp/pg_transfer/pg_dumps.tar.zst /tmp/pg_transfer/checksums.txt "${DEST_SSH_USER}@${DEST_HOST}:/tmp/" || {
+  rsync -a -q -A -X -H --perms --fileflags --links --times --crtimes --recursive --no-compress --inplace --whole-file --protect-args --human-readable -e "ssh -q" /tmp/pg_transfer/pg_dumps.tar.zst /tmp/pg_transfer/checksums.txt "${DEST_SSH_USER}@${DEST_HOST}:/tmp/" || {
     error "Failed to push to destination"
     return 1
   }
@@ -854,27 +854,27 @@ function backup_server_files() {
     }
 
     info "Copying /opt/ from source..."
-    sudo -u root rsync -avPH --no-compress --relative /opt/ "${SERVER_FILES_BACKUP_DIR}/" || {
+    sudo -u root rsync -a -q -A -X -H --perms --fileflags --links --times --crtimes --recursive --no-compress --inplace --whole-file --protect-args --human-readable --relative /opt/ "${SERVER_FILES_BACKUP_DIR}/" || {
       warn "Failed to copy /opt/* (may not exist or be empty)"
     }
 
     info "Copying /etc/default/jetty from source..."
-    sudo -u root rsync -avPH --no-compress --relative /etc/default/jetty "${SERVER_FILES_BACKUP_DIR}/" || {
+    sudo -u root rsync -a -q -A -X -H --perms --fileflags --links --times --crtimes --recursive --no-compress --inplace --whole-file --protect-args --human-readable --relative /etc/default/jetty "${SERVER_FILES_BACKUP_DIR}/" || {
       warn "Failed to copy /etc/default/jetty (may not exist)"
     }
 
     info "Copying /home/smoothie/Scripts/* from source..."
-    sudo -u root rsync -avPH --no-compress --relative /home/smoothie/Scripts/ "${SERVER_FILES_BACKUP_DIR}/" || {
+    sudo -u root rsync -a -q -A -X -H --perms --fileflags --links --times --crtimes --recursive --no-compress --inplace --whole-file --protect-args --human-readable --relative /home/smoothie/Scripts/ "${SERVER_FILES_BACKUP_DIR}/" || {
       warn "Failed to copy /home/smoothie/Scripts/* (may not exist or be empty)"
     }
 
     info "Copying SSH host keys from source..."
-    sudo -u root rsync -avPH --no-compress --relative /etc/ssh/ssh_host* "${SERVER_FILES_BACKUP_DIR}/" || {
+    sudo -u root rsync -a -q -A -X -H --perms --fileflags --links --times --crtimes --recursive --no-compress --inplace --whole-file --protect-args --human-readable --relative /etc/ssh/ssh_host* "${SERVER_FILES_BACKUP_DIR}/" || {
       warn "Failed to copy SSH host keys (may not have permissions)"
     }
 
     info "Copying salt minion_id file from source..."
-    sudo -u root rsync -avPH --no-compress --relative /etc/salt/minion_id "${SERVER_FILES_BACKUP_DIR}/" || {
+    sudo -u root rsync -a -q -A -X -H --perms --fileflags --links --times --crtimes --recursive --no-compress --inplace --whole-file --protect-args --human-readable --relative /etc/salt/minion_id "${SERVER_FILES_BACKUP_DIR}/" || {
       warn "Failed to copy salt minion file"
     }
 
@@ -886,11 +886,11 @@ function restore_server_files() {
   info "[⏳] Moving server files to final locations on destination..."
 
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}"  bash <<ENDSSH
-    sudo -u root rsync -avPH --no-compress ${SERVER_FILES_BACKUP_DIR}/etc/default/jetty /etc/default/
-    sudo -u root rsync -avPH --no-compress ${SERVER_FILES_BACKUP_DIR}/etc/ssh/ /etc/ssh/
-    sudo -u root rsync -avPH --no-compress ${SERVER_FILES_BACKUP_DIR}/etc/salt/minion_id /etc/salt/
-    sudo -u root rsync -avPH --no-compress ${SERVER_FILES_BACKUP_DIR}/home/ /home/
-    sudo -u root rsync -avPH --no-compress ${SERVER_FILES_BACKUP_DIR}/opt/ /opt/
+    sudo -u root rsync -a -q -A -X -H --perms --fileflags --links --times --crtimes --recursive --no-compress --inplace --whole-file --protect-args --human-readable ${SERVER_FILES_BACKUP_DIR}/etc/default/jetty /etc/default/
+    sudo -u root rsync -a -q -A -X -H --perms --fileflags --links --times --crtimes --recursive --no-compress --inplace --whole-file --protect-args --human-readable ${SERVER_FILES_BACKUP_DIR}/etc/ssh/ /etc/ssh/
+    sudo -u root rsync -a -q -A -X -H --perms --fileflags --links --times --crtimes --recursive --no-compress --inplace --whole-file --protect-args --human-readable ${SERVER_FILES_BACKUP_DIR}/etc/salt/minion_id /etc/salt/
+    sudo -u root rsync -a -q -A -X -H --perms --fileflags --links --times --crtimes --recursive --no-compress --inplace --whole-file --protect-args --human-readable ${SERVER_FILES_BACKUP_DIR}/home/ /home/
+    sudo -u root rsync -a -q -A -X -H --perms --fileflags --links --times --crtimes --recursive --no-compress --inplace --whole-file --protect-args --human-readable ${SERVER_FILES_BACKUP_DIR}/opt/ /opt/
 ENDSSH
 
   if [[ $? -ne 0 ]]; then
@@ -929,11 +929,11 @@ function setup_bi_cube() {
   success "/etc/profile.d/ibp.sh found on source - proceeding with bi_cube setup"
 
   info "[⏳] Backing up bi_cube files from source..."
-  rsync -avPH --no-compress --relative /home/smoothie/bi_cube* "${SERVER_FILES_BACKUP_DIR}/" || {
+  rsync -a -q -A -X -H --perms --fileflags --links --times --crtimes --recursive --no-compress --inplace --whole-file --protect-args --human-readable --relative /home/smoothie/bi_cube* "${SERVER_FILES_BACKUP_DIR}/" || {
     warn "Failed to copy bi_cube files from /home/smoothie/ (may not exist)"
   }
 
-  rsync -avPH --no-compress --relative /etc/profile.d/ibp* "${SERVER_FILES_BACKUP_DIR}/" || {
+  rsync -a -q -A -X -H --perms --fileflags --links --times --crtimes --recursive --no-compress --inplace --whole-file --protect-args --human-readable --relative /etc/profile.d/ibp* "${SERVER_FILES_BACKUP_DIR}/" || {
     warn "Failed to copy ibp files from /etc/profile.d/ (may not exist)"
   }
 
@@ -1228,12 +1228,12 @@ function full_migration() {
 
   revert_maintenance_settings_dest || return 1
   rename_smoothie_folder || return 1
-  restore_server_files || return 1
   # setup_bi_cube || return 1
   sync_timezone || return 1
   update_hosts_file_dest || return 1
   update_bashrc_ps1_dest || return 1
   display_summary_dest || return 1
+  restore_server_files || return 1
   # startdw_dest || return 1
   update_host_key || return 1
   #TODO: On deploy, remove salt-key -d INSTANCE and salt-key -a INSTANCE
