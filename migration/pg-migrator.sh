@@ -1332,7 +1332,7 @@ function main() {
         show_execution_time "${start_time}"
         read -p "Press Enter to continue..."
         ;;
-      18)
+      18|q)
         info "Exiting..."
         exit 0
         ;;
