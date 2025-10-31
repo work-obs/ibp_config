@@ -834,7 +834,7 @@ function update_host_key() {
   info "[⏳] Updating host key for ${SOURCE_HOST}..."
   local source_hostname
   source_hostname=$(grep -i "${SOURCE_HOST}" /etc/hosts | awk '{print $2}')
-  sudo /home/smoothie/update_known_hosts.sh $source_hostname || {
+  sudo /home/smoothie/update_known_hosts.sh $source_hostname 2>/dev/null || {
     error "Failed to update host key for ${source_hostname}"
     return 1
   }
