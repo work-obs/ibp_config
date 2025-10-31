@@ -525,6 +525,14 @@ function transfer_to_destination() {
     return 1
   }
 
+  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<'ENDSSH'
+    function info() {
+      printf '\033[1;34m[%s]: %s\033[0m\n' "$(date +'%Y-%m-%d %H:%M:%S')" "$*"
+    }
+    archive_size=$(du -sh /tmp/pg_dumps.tar.zst | awk '{print $1}')
+    info " [-] Archive size: ${archive_size}"
+ENDSSH
+
   transfer_via_jumpbox || return 1
 
   success "[☑️] Successfully transferred TAR file to destination..."
