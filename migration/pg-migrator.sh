@@ -690,7 +690,7 @@ function run_analyse() {
   databases=$(ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -t -c \"SELECT datname FROM pg_database WHERE datname NOT IN ('template0', 'template1', 'postgres');\"")
 
   for db in ${databases}; do
-    info "Analysing database: ${db}"
+    info " - Analysing database: ${db}"
     ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -d ${db} -c 'ANALYZE VERBOSE;' 2>/dev/null" || {
       warn "[⚠️] ANALYZE failed for ${db}"
     }
@@ -707,7 +707,7 @@ function run_vacuum() {
   databases=$(ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -t -c \"SELECT datname FROM pg_database WHERE datname NOT IN ('template0', 'template1', 'postgres');\"")
 
   for db in ${databases}; do
-    info "Vacuuming database: ${db}"
+    info " - Vacuuming database: ${db}"
     ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -d ${db} -c 'VACUUM ANALYZE;'" || {
       warn "[⚠️] VACUUM failed for ${db}"
     }
@@ -725,7 +725,7 @@ function run_reindex() {
 
   for db in ${databases}; do
     sleep 1
-    info "Reindexing database: ${db}"
+    info " - Re-Indexing database: ${db}"
     ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -d ${db} -c 'REINDEX DATABASE ${db};'" || {
       warn "[⚠️] REINDEX failed for ${db}"
     }
