@@ -99,6 +99,7 @@ function prompt_required_config() {
 }
 
 function validate_environment() {
+  echo
   info "[⏳] Validating environment..."
 
   if [[ -z "${SOURCE_HOST}" ]]; then
@@ -135,6 +136,7 @@ function validate_environment() {
 }
 
 function check_disk_space_source() {
+  echo
   info "[⏳] Checking disk space on source server..."
 
   local available
@@ -153,6 +155,7 @@ function check_disk_space_source() {
 }
 
 function check_disk_space_dest() {
+  echo
   info "[⏳] Checking disk space on dest server..."
 
   local available
@@ -171,14 +174,15 @@ function check_disk_space_dest() {
 }
 
 function create_backup_directory() {
-  info "Creating backup directory on source server..."
+  echo
+  info "[⏳] Creating backup directory on source server..."
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "mkdir -p ${BACKUP_DIR}" || {
     error "Failed to create backup directory on source"
     return 1
   }
 
-  success "Backup directory created on source: ${BACKUP_DIR}"
+  success "[☑️] Backup directory created on source: ${BACKUP_DIR}"
 }
 
 function export_globals() {
@@ -1139,7 +1143,7 @@ function show_execution_time() {
 }
 
 function full_migration() {
-  info "[⏳] Starting full migration process..."
+  info "[🚀] Starting full migration process..."
   local start_time
   local full_migration_start_time
 
