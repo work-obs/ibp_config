@@ -1294,7 +1294,8 @@ function show_menu() {
   printf '%b\n' "${BOLD_GREEN}14)${RESET} Sync Timezone (DEST)"
   printf '%b\n' "${BOLD_GREEN}15)${RESET} Update /etc/hosts (DEST)"
   printf '%b\n' "${BOLD_GREEN}16)${RESET} Update .bashrc PS1 Prompt (DEST)"
-  printf '%b\n' "${BOLD_GREEN}17)${RESET} Exit"
+  printf '%b\n' "${BOLD_GREEN}17)${RESET} Final Cleanup (SOURCE+DEST+JUMPBOX)"
+  printf '%b\n' "${BOLD_GREEN}q)${RESET} Quit"
   printf '\n'
   printf '%b' "${BOLD_YELLOW}Select option: ${RESET}"
 }
@@ -1390,6 +1391,11 @@ function main() {
         read -p "Press Enter to continue..."
         ;;
       17)
+        final_cleanup
+        show_execution_time "${start_time}"
+        read -p "Press Enter to continue..."
+        ;;
+      q|Q)
         info "Exiting..."
         exit 0
         ;;
