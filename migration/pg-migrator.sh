@@ -742,7 +742,7 @@ function validate_row_counts() {
   databases=$(ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -t -c \"SELECT datname FROM pg_database WHERE datname NOT IN ('template0', 'template1', 'postgres');\"")
 
   for db in ${databases}; do
-    info "Checking row counts for database: ${db}"
+    info " - Checking row counts for database: ${db}"
     ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -d ${db} -c 'SELECT schemaname, relname, n_live_tup FROM pg_stat_user_tables ORDER BY schemaname, relname;'" || {
       warn "[⚠️] Row count validation failed for ${db}"
     }
@@ -759,7 +759,7 @@ function validate_constraints() {
   databases=$(ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -t -c \"SELECT datname FROM pg_database WHERE datname NOT IN ('template0', 'template1', 'postgres');\"")
 
   for db in ${databases}; do
-    info "Checking constraints for database: ${db}"
+    info " - Checking constraints for database: ${db}"
     ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -d ${db} -c 'SELECT conname, contype, convalidated FROM pg_constraint;'" || {
       warn "[⚠️] Constraint validation failed for ${db}"
     }
@@ -776,7 +776,7 @@ function validate_extensions() {
   databases=$(ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -t -c \"SELECT datname FROM pg_database WHERE datname NOT IN ('template0', 'template1', 'postgres');\"")
 
   for db in ${databases}; do
-    info "Checking extensions for database: ${db}"
+    info " - Checking extensions for database: ${db}"
     ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -d ${db} -c 'SELECT extname, extversion FROM pg_extension;'" || {
       warn "[⚠️] Extension validation failed for ${db}"
     }
