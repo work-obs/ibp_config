@@ -634,7 +634,10 @@ function restore_databases() {
     
     cpu_cores=\$(nproc)
     half_cores=\$((cpu_cores / 2))
-    parallel_jobs=\${half_cores}
+    parallel_jobs=\$((half_cores / 2))
+    if (( parallel_jobs < 2 )); then
+      parallel_jobs=2
+    fi
     
     echo "INFO: Using \${parallel_jobs} parallel jobs per database restore"
     echo
