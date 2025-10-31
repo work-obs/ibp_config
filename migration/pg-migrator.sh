@@ -1094,6 +1094,8 @@ ENDSSH
   info "  [-] Cleaning up DEST_HOST: ${DEST_HOST}"
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
     sudo rm -rf /opt/smoothie11_old 2>/dev/null
+    sudo rm -rf /tmp/etc 2>/dev/null
+    sudo rm -rf /tmp/home 2>/dev/null
     sudo rm -rf /tmp/pg_migration 2>/dev/null
     sudo rm -f /tmp/pg_dumps.tar.zst 2>/dev/null
     sudo rm -f /tmp/checksums.txt 2>/dev/null
