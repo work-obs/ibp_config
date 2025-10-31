@@ -886,7 +886,7 @@ ENDSSH
 function restore_server_files() {
   info "[⏳] Moving server files to final locations on destination..."
 
-  ssh -q "${DEST_SSH_USER}@${DEST_HOST}"  bash <<ENDSSH
+  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
     sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable ${SERVER_FILES_BACKUP_DIR}/etc/default/jetty /etc/default/
     sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable ${SERVER_FILES_BACKUP_DIR}/etc/ssh/ /etc/ssh/
     sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable ${SERVER_FILES_BACKUP_DIR}/etc/salt/minion_id /etc/salt/
@@ -1051,6 +1051,15 @@ function sync_timezone() {
   return 0
 }
 
+function reseed_dest_hostkey_to_knownhosts_file() {
+  info "[⚠️] Preload the destination SSH host key to '/home/smoothie/.ssh/known_hosts'"
+
+  sudo -u smoothie ssh-keygen -f "/home/smoothie/.ssh/known_hosts" -R "$DEST_HOST" 2>/dev/null
+  sudo -u smoothie ssh-keyscan $DEST_HOST >> "/home/smoothie/.ssh/known_hosts" 2>/dev/null
+
+  success "[☑️] Successfully added the destination SSH host key to '/home/smoothie/.ssh/known_hosts'"
+}
+
 function update_hosts_file_dest() {
   info "[⏳] Retrieving source hostname from local /etc/hosts..."
   local source_hostname
@@ -1178,7 +1187,10 @@ function show_execution_time() {
 function full_migration() {
   info "[⏳] Starting full migration process..."
   local start_time
+  local full_migration_start_time
+
   start_time=$(date +%s)
+  full_migration_start_time=$(date +%s)
   
   validate_environment || return 1
   check_disk_space_source || return 1
@@ -1186,37 +1198,42 @@ function full_migration() {
   create_backup_directory || return 1
   stopdw_source || return 1
   stopdw_dest || return 1
-  set_maintenance_settings_source || return 1
   
   start_time=$(date +%s)
+  set_maintenance_settings_source || return 1
   export_globals || return 1
   dump_databases || return 1
-  show_execution_time "${start_time}"
-
   revert_maintenance_settings_source || return 1
+  show_execution_time "${start_time}" || return 1
+
   startdw_source || return 1
 
   start_time=$(date +%s)
   backup_server_files || return 1
-  show_execution_time "${start_time}"
+  show_execution_time "${start_time}" || return 1
 
   start_time=$(date +%s)
   create_archive || return 1
   generate_checksums || return 1
-  show_execution_time "${start_time}"
+  show_execution_time "${start_time}" || return 1
 
   start_time=$(date +%s)
   transfer_to_destination || return 1
-  show_execution_time "${start_time}"
-
-  validate_checksums || return 1
-  extract_archive || return 1
-  set_maintenance_settings_dest || return 1
+  show_execution_time "${start_time}" || return 1
 
   start_time=$(date +%s)
+  validate_checksums || return 1
+  show_execution_time "${start_time}" || return 1
+
+  start_time=$(date +%s)
+  extract_archive || return 1
+  show_execution_time "${start_time}" || return 1
+
+  start_time=$(date +%s)
+  set_maintenance_settings_dest || return 1
   restore_globals || return 1
   restore_databases || return 1
-  show_execution_time "${start_time}"
+  show_execution_time "${start_time}" || return 1
 
   start_time=$(date +%s)
   run_analyze || return 1
@@ -1225,21 +1242,29 @@ function full_migration() {
   validate_row_counts || return 1
   validate_constraints || return 1
   validate_extensions || return 1
-  show_execution_time "${start_time}"
-
   revert_maintenance_settings_dest || return 1
+  show_execution_time "${start_time}" || return 1
+
   rename_smoothie_folder || return 1
-  # setup_bi_cube || return 1
+
+  start_time=$(date +%s)
+  restore_server_files || return 1
+  show_execution_time "${start_time}" || return 1
+
+  # TODO: setup_bi_cube || return 1
+  
+  reseed_dest_hostkey_to_knownhosts_file || return 1
   sync_timezone || return 1
   update_hosts_file_dest || return 1
   update_bashrc_ps1_dest || return 1
   display_summary_dest || return 1
-  restore_server_files || return 1
-  # startdw_dest || return 1
   update_host_key || return 1
-  #TODO: On deploy, remove salt-key -d INSTANCE and salt-key -a INSTANCE
   final_cleanup || return 1
 
+  # TODO: On deploy, remove salt-key -d INSTANCE and salt-key -a INSTANCE
+  # TODO: startdw_dest || return 1
+
+  show_execution_time "${full_migration_start_time}" || return 1
   success "[✅] 🎉 Full migration completed successfully! 🎉"
 }
 
