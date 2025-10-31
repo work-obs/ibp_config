@@ -507,7 +507,7 @@ function create_archive() {
       -C / etc/salt/ minion_id 2>/dev/null || true
     
     archive_size=$(du -sh /tmp/pg_dumps.tar.zst | awk '{print $1}')
-    info "  [-] Archive size: ${archive_size}"
+    info " - TAR SIZE: ${archive_size}"
     
     sudo chown smoothie:smoothie /tmp/pg_dumps.tar.zst
 ENDSSH
