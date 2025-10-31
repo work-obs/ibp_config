@@ -943,6 +943,7 @@ ENDSSH
 }
 
 function sync_timezone() {
+  echo
   info "[⏳] Synchronizing timezone from source to destination..."
 
   info " - Reading timezone from source server..."
@@ -996,7 +997,8 @@ function sync_timezone() {
 }
 
 function reseed_dest_hostkey_to_knownhosts_file() {
-  info "[⚠️] Preload the destination SSH host key to '/home/smoothie/.ssh/known_hosts'"
+  echo
+  info "[⏳] Preload the destination SSH host key to '/home/smoothie/.ssh/known_hosts'"
 
   sudo -u smoothie ssh-keygen -f "/home/smoothie/.ssh/known_hosts" -R "$DEST_HOST" >/dev/null 2>&1 </dev/null
   sudo -u smoothie ssh-keyscan $DEST_HOST >> "/home/smoothie/.ssh/known_hosts" 2>&1 </dev/null
@@ -1005,6 +1007,7 @@ function reseed_dest_hostkey_to_knownhosts_file() {
 }
 
 function update_hosts_file_dest() {
+  echo
   info "[⏳] Retrieving source hostname from local /etc/hosts..."
   local source_hostname
   source_hostname=$(grep -i "${SOURCE_HOST}" /etc/hosts | awk '{print $2}')
@@ -1014,9 +1017,9 @@ function update_hosts_file_dest() {
     return 1
   fi
 
-  success "Source hostname: ${source_hostname}"
+  success " - Source hostname: ${source_hostname}"
+  info " - Updating /etc/hosts file on destination..."
 
-  info "[⏳] Updating /etc/hosts file on destination..."
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
     sudo hostnamectl set-hostname "${source_hostname}"
     sudo sed -i '/^127.0.0.1.*localhost/d' /etc/hosts
@@ -1032,6 +1035,7 @@ ENDSSH
 }
 
 function update_bashrc_ps1_dest() {
+  echo
   info "[⏳] Updating PS1 prompt in /home/smoothie/.bashrc on destination..."
 
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<'ENDSSH'
@@ -1069,6 +1073,7 @@ ENDSSH
 }
 
 function final_cleanup() {
+  echo
   info "[⏳] Performing final cleanup..."
   info "  [-] Cleaning up SOURCE_HOST: ${SOURCE_HOST}"
 
