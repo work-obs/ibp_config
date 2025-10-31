@@ -352,6 +352,7 @@ ENDSSH
 }
 
 function revert_maintenance_settings_source() {
+  echo
   info "[⏳] Reverting maintenance settings to defaults on source..."
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
@@ -827,7 +828,7 @@ function update_host_key() {
 }
 
 function restore_server_files() {
-  info "[⏳] Moving server files to final locations on destination..."
+  info "[⏳] Moving source files to final locations on destination..."
 
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
     sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable ${SERVER_FILES_BACKUP_DIR}/etc/default/jetty /etc/default/
@@ -842,7 +843,7 @@ ENDSSH
     return 0
   fi
 
-  success "[☑️] Server files restored to destinations"
+  success "[☑️] Restored source server files"
 }
 
 function rename_smoothie_folder() {
@@ -944,7 +945,7 @@ ENDSSH
 function sync_timezone() {
   info "[⏳] Synchronizing timezone from source to destination..."
 
-  info "Reading timezone from source server..."
+  info " - Reading timezone from source server..."
   local source_timezone
   source_timezone=$(ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "cat /etc/timezone 2>/dev/null")
 
@@ -958,9 +959,9 @@ function sync_timezone() {
     return 1
   fi
 
-  success "Source timezone: ${source_timezone}"
+  success " - Source timezone: ${source_timezone}"
+  info " - Getting current timezone on destination..."
 
-  info "Getting current timezone on destination..."
   local dest_timezone
   dest_timezone=$(ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "cat /etc/timezone 2>/dev/null")
 
@@ -969,7 +970,7 @@ function sync_timezone() {
   fi
 
   if [[ -n "${dest_timezone}" ]]; then
-    info "Current destination timezone: ${dest_timezone}"
+    info " - Current destination timezone: ${dest_timezone}"
   fi
 
   if [[ "${source_timezone}" == "${dest_timezone}" ]]; then
@@ -977,10 +978,10 @@ function sync_timezone() {
     return 0
   fi
 
-  info "[⏳] Setting timezone on destination to: ${source_timezone}"
+  info " - Setting timezone on destination to: ${source_timezone}"
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo timedatectl set-timezone ${source_timezone}"
 
-  info "[⏳] Verifying timezone change..."
+  info " - Verifying timezone change..."
   local new_timezone
   new_timezone=$(ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "timedatectl show -p Timezone --value 2>/dev/null")
 
