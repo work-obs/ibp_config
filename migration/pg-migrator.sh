@@ -1054,9 +1054,9 @@ function sync_timezone() {
 function reseed_dest_hostkey_to_knownhosts_file() {
   info "[⚠️] Preload the destination SSH host key to '/home/smoothie/.ssh/known_hosts'"
 
-  sudo -u smoothie ssh-keygen -f "/home/smoothie/.ssh/known_hosts" -R "$DEST_HOST" 2>/dev/null
-  sudo -u smoothie ssh-keyscan $DEST_HOST >> "/home/smoothie/.ssh/known_hosts" 2>/dev/null
-
+  sudo -u smoothie ssh-keygen -f "/home/smoothie/.ssh/known_hosts" -R "$DEST_HOST" >/dev/null 2>&1 </dev/null
+  sudo -u smoothie ssh-keyscan $DEST_HOST >> "/home/smoothie/.ssh/known_hosts" 2>&1 </dev/null
+  
   success "[☑️] Successfully added the destination SSH host key to '/home/smoothie/.ssh/known_hosts'"
 }
 
@@ -1252,7 +1252,7 @@ function full_migration() {
   show_execution_time "${start_time}" || return 1
 
   # TODO: setup_bi_cube || return 1
-  
+
   reseed_dest_hostkey_to_knownhosts_file || return 1
   sync_timezone || return 1
   update_hosts_file_dest || return 1
