@@ -485,7 +485,7 @@ function create_archive() {
     pg_migration_dir_size=\$(sudo du -sh /tmp/pg_migration)
     info "  [-] Total size: \$pg_migration_dir_size"
 
-    cd /tmp && sudo -u root tar -I 'zstd -1 -T0' -cf pg_dumps.tar.zst pg_migration/
+    cd /tmp && sudo -u root tar -I 'zstd -3 -T0' -cf pg_dumps.tar.zst pg_migration/
     sudo chown smoothie:smoothie /tmp/pg_dumps.tar.zst
 ENDSSH
   success "[☑️] Archive created: /tmp/pg_dumps.tar.zst"
