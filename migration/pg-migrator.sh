@@ -640,8 +640,8 @@ function restore_databases() {
       (
         echo "INFO: [START] Restoring database: \${db}"
         
-        if psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "DROP DATABASE IF EXISTS \${db};" && \
-           createdb -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} \${db} && \
+        if sudo -u postgres psql -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -c "DROP DATABASE IF EXISTS \${db};" && \
+           sudo -u postgres createdb -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} \${db} && \
            pg_restore -h 127.0.0.1 -U ${PG_USER} -p ${DEST_PORT} -j \${parallel_jobs} -d \${db} ${BACKUP_DIR}/\${db}.dump; then
           echo "INFO: [DONE] Successfully restored database: \${db}"
         else
