@@ -114,7 +114,7 @@ function main() {
   info "Tags: ${tag_spec}"
   info "Creating new volume: ${new_name}"
   local new_volume_id
-  new_volume_id=$(aws ec2 create-volume --snapshot-id "${SNAPSHOT_ID}" --volume-type gp3 --size "${new_size}" --iops 6000 --throughput 200 --availability-zone "${availability_zone}" --tag-specifications "ResourceType=volume,Tags=[${tag_spec}]" --query 'VolumeId' --output text)
+  new_volume_id=$(aws ec2 create-volume --snapshot-id "${SNAPSHOT_ID}" --volume-type gp3 --size "${new_size}" --iops 6000 --throughput 256 --availability-zone "${availability_zone}" --tag-specifications "ResourceType=volume,Tags=[${tag_spec}]" --query 'VolumeId' --output text)
   
   if [[ -z "${new_volume_id}" ]]; then
     error "Failed to create volume"
