@@ -42,7 +42,7 @@ function warn() {
 
 function success() {
   [[ -z "$1" ]] && { err "success: message cannot be empty"; return 1; }
-  printf '%b[%s]: %s%b\n\n' "${BOLD_GREEN}" "$(date +'%Y-%m-%d %H:%M:%S')" "$*" "${RESET}"
+  printf '%b[%s]: %s%b\n' "${BOLD_GREEN}" "$(date +'%Y-%m-%d %H:%M:%S')" "$*" "${RESET}"
 }
 
 function error() {
@@ -477,26 +477,29 @@ ENDSSH
 
 function create_archive() {
   info "[⏳] Creating compressed archive on source..."
-  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
+  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<'ENDSSH'
     function info() {
-      printf '\033[1;34m[%s]: %s\033[0m\n' "\$(date +'%Y-%m-%d %H:%M:%S')" "\$*"
+      printf '\033[1;34m[%s]: %s\033[0m\n' "$(date +'%Y-%m-%d %H:%M:%S')" "$*"
     }
     
     sudo apt install zstd -y -qq > /dev/null 2>&1
     
     info "Archiving database dumps and server files directly..."
-    cd /tmp && sudo -u root tar --use-compress-program="zstd -T0 -3" -cf pg_dumps.tar.zst \\
-      --exclude='pg_migration/server_files' \\
-      pg_migration/ \\
-      --transform 's,^,server_files/,' \\
-      -C / opt/ \\
-      -C / etc/default/jetty \\
-      -C / home/smoothie/Scripts/ \\
-      -C / etc/ssh/ssh_host* \\
-      -C / etc/salt/minion_id 2>/dev/null || true
+    cd /tmp && sudo -u root tar --use-compress-program="zstd -T0 -3" -cf pg_dumps.tar.zst \
+      pg_migration/dumps/ \
+      --transform 's,^opt,pg_migration/server_files/opt,' \
+      --transform 's,^etc/default/jetty,pg_migration/server_files/etc/default/jetty,' \
+      --transform 's,^home/smoothie/Scripts,pg_migration/server_files/home/smoothie/Scripts,' \
+      --transform 's,^etc/ssh/ssh_host,pg_migration/server_files/etc/ssh/ssh_host,' \
+      --transform 's,^etc/salt/minion_id,pg_migration/server_files/etc/salt/minion_id,' \
+      -C / opt/ \
+      -C / etc/default/ jetty \
+      -C / home/smoothie/ Scripts/ \
+      -C / etc/ssh/ ssh_host* \
+      -C / etc/salt/ minion_id 2>/dev/null || true
     
-    archive_size=\$(du -sh /tmp/pg_dumps.tar.zst | awk '{print \$1}')
-    info "  [-] Archive size: \${archive_size}"
+    archive_size=$(du -sh /tmp/pg_dumps.tar.zst | awk '{print $1}')
+    info "  [-] Archive size: ${archive_size}"
     
     sudo chown smoothie:smoothie /tmp/pg_dumps.tar.zst
 ENDSSH
@@ -515,7 +518,7 @@ ENDSSH
 }
 
 function transfer_to_destination() {
-  info "[⏳] Transferring TAR file: SOURCE ---> JUMPBOX ---> DESTINATION"
+  info "[⏳] BEGIN TAR FILE TRANSFER: SOURCE ---> JUMPBOX ---> DESTINATION"
 
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "mkdir -p ${BACKUP_DIR} 2>/dev/null" || {
     error "Failed to create directory '${BACKUP_DIR}' on destination"
@@ -528,7 +531,7 @@ function transfer_to_destination() {
 }
 
 function transfer_via_jumpbox() {
-  info "[⏳] RSYNC: SOURCE ---> JUMPBOX"
+  info " [-] RSYNC: SOURCE ---> JUMPBOX"
   mkdir -p /tmp/pg_transfer
 
   rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable -e "ssh -q" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/pg_dumps.tar.zst" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/checksums.txt" /tmp/pg_transfer/ || {
@@ -536,7 +539,7 @@ function transfer_via_jumpbox() {
     return 1
   }
 
-  info "[⏳] RSYNC: JUMPBOX ---> DESTINATION"
+  info " [-] RSYNC: JUMPBOX ---> DESTINATION"
   rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable -e "ssh -q" /tmp/pg_transfer/pg_dumps.tar.zst /tmp/pg_transfer/checksums.txt "${DEST_SSH_USER}@${DEST_HOST}:/tmp/" || {
     error "Failed to push to destination"
     return 1
@@ -556,6 +559,21 @@ function validate_checksums() {
 
 function extract_archive() {
   info "[⏳] Extracting archive on destination..."
+
+  # NOTE: The tar file will extract to the following structure:
+  #
+  # /tmp/pg_migration/
+  # ├── dumps/                    # Database dumps from dump_databases()
+  # │   ├── globals.sql
+  # │   └── *.dump/
+  # └── server_files/             # Server configuration files
+  #     ├── opt/
+  #     ├── etc/
+  #     │   ├── default/jetty
+  #     │   ├── ssh/ssh_host*
+  #     │   └── salt/minion_id
+  #     └── home/smoothie/Scripts/
+
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
     sudo apt install zstd -y -qq > /dev/null 2>&1
     sleep 1
@@ -768,9 +786,9 @@ function startdw_source() {
     error "Execution of startdw failed."
     return 1
   }
-  # NOTE: We want to sleep for 5s before starting the archiving process
+  # NOTE: We want to sleep for 3s before starting the archiving process
   #       otherwise we overwhelm the startdw process.
-  sleep 5
+  sleep 3
 }
 
 function startdw_dest() {
@@ -1117,7 +1135,9 @@ function full_migration() {
   revert_maintenance_settings_source || return 1
   show_execution_time "${start_time}" || return 1
 
+  start_time=$(date +%s)
   startdw_source || return 1
+  show_execution_time "${start_time}" || return 1
 
   start_time=$(date +%s)
   create_archive || return 1
