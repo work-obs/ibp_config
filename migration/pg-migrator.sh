@@ -25,6 +25,7 @@ BACKUP_DIR="${BACKUP_DIR:-/tmp/pg_migration/dumps}"
 SERVER_FILES_BACKUP_DIR="${SERVER_FILES_BACKUP_DIR:-/tmp/pg_migration/server_files}"
 PARALLEL_JOBS="${PARALLEL_JOBS:-2}"
 PG_USER="postgres"
+BI_CUBE_DETECTED=""
 
 function err() {
   printf '%b[%s]: %s%b\n' "${BOLD_RED}" "$(date +'%Y-%m-%d %H:%M:%S')" "$*" "${RESET}" >&2
@@ -133,6 +134,11 @@ function validate_environment() {
   fi
 
   success "[☑️] Environment validation passed"
+  
+  detect_bi_cube
+  if [[ "${BI_CUBE_DETECTED}" == "true" ]]; then
+    info "[ℹ️] bi_cube detected on source"
+  fi
 }
 
 function check_disk_space_source() {
@@ -409,6 +415,21 @@ ENDSSH
   success "[☑️] Maintenance settings reverted to defaults on destination"
 }
 
+function detect_bi_cube() {
+  if [[ -n "${BI_CUBE_DETECTED}" ]]; then
+    [[ "${BI_CUBE_DETECTED}" == "true" ]]
+    return $?
+  fi
+  
+  if ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "test -f /etc/profile.d/ibp.sh" 2>/dev/null; then
+    BI_CUBE_DETECTED="true"
+    return 0
+  else
+    BI_CUBE_DETECTED="false"
+    return 1
+  fi
+}
+
 function dump_databases() {
   display_summary
 
@@ -488,29 +509,50 @@ ENDSSH
 
 function create_archive() {
   info "[⏳] Creating TAR FILE on source..."
-  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<'ENDSSH'
+  
+  ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
     function info() {
-      printf '\033[1;34m[%s]: %s\033[0m\n' "$(date +'%Y-%m-%d %H:%M:%S')" "$*"
+      printf '\033[1;34m[%s]: %s\033[0m\n' "\$(date +'%Y-%m-%d %H:%M:%S')" "\$*"
     }
     
     sudo apt install zstd -y -qq > /dev/null 2>&1
     
-    cd /tmp && sudo -u root tar --use-compress-program="zstd -T0 -3" -cf pg_dumps.tar.zst \
-      pg_migration/dumps/ \
-      --transform 's,^opt,pg_migration/server_files/opt,' \
-      --transform 's,^etc/default/jetty,pg_migration/server_files/etc/default/jetty,' \
-      --transform 's,^home/smoothie/Scripts,pg_migration/server_files/home/smoothie/Scripts,' \
-      --transform 's,^etc/ssh/ssh_host,pg_migration/server_files/etc/ssh/ssh_host,' \
-      --transform 's,^etc/salt/minion_id,pg_migration/server_files/etc/salt/minion_id,' \
-      --exclude='opt/fluent-bit' \
-      -C / opt/ \
-      -C / etc/default/ jetty \
-      -C / home/smoothie/ Scripts/ \
-      -C / etc/ssh/ ssh_host* \
-      -C / etc/salt/ minion_id 2>/dev/null || true
+    if [[ "${BI_CUBE_DETECTED}" == "true" ]]; then
+      cd /tmp && sudo -u root tar --use-compress-program="zstd -T0 -3" -cf pg_dumps.tar.zst \\
+        pg_migration/dumps/ \\
+        --transform 's,^opt,pg_migration/server_files/opt,' \\
+        --transform 's,^etc/default/jetty,pg_migration/server_files/etc/default/jetty,' \\
+        --transform 's,^home/smoothie/Scripts,pg_migration/server_files/home/smoothie/Scripts,' \\
+        --transform 's,^etc/ssh/ssh_host,pg_migration/server_files/etc/ssh/ssh_host,' \\
+        --transform 's,^etc/salt/minion_id,pg_migration/server_files/etc/salt/minion_id,' \\
+        --transform 's,^home/smoothie/bi_cube,pg_migration/server_files/home/smoothie/bi_cube,' \\
+        --transform 's,^etc/profile.d/ibp,pg_migration/server_files/etc/profile.d/ibp,' \\
+        --exclude='opt/fluent-bit' \\
+        -C / opt/ \\
+        -C / etc/default/ jetty \\
+        -C / home/smoothie/ Scripts/ \\
+        -C / etc/ssh/ ssh_host* \\
+        -C / etc/salt/ minion_id \\
+        -C / home/smoothie/ bi_cube* \\
+        -C / etc/profile.d/ ibp* 2>/dev/null || true
+    else
+      cd /tmp && sudo -u root tar --use-compress-program="zstd -T0 -3" -cf pg_dumps.tar.zst \\
+        pg_migration/dumps/ \\
+        --transform 's,^opt,pg_migration/server_files/opt,' \\
+        --transform 's,^etc/default/jetty,pg_migration/server_files/etc/default/jetty,' \\
+        --transform 's,^home/smoothie/Scripts,pg_migration/server_files/home/smoothie/Scripts,' \\
+        --transform 's,^etc/ssh/ssh_host,pg_migration/server_files/etc/ssh/ssh_host,' \\
+        --transform 's,^etc/salt/minion_id,pg_migration/server_files/etc/salt/minion_id,' \\
+        --exclude='opt/fluent-bit' \\
+        -C / opt/ \\
+        -C / etc/default/ jetty \\
+        -C / home/smoothie/ Scripts/ \\
+        -C / etc/ssh/ ssh_host* \\
+        -C / etc/salt/ minion_id 2>/dev/null || true
+    fi
     
-    archive_size=$(du -sh /tmp/pg_dumps.tar.zst | awk '{print $1}')
-    info " - TAR SIZE: ${archive_size}"
+    archive_size=\$(du -sh /tmp/pg_dumps.tar.zst | awk '{print \$1}')
+    info " - TAR SIZE: \${archive_size}"
     
     sudo chown smoothie:smoothie /tmp/pg_dumps.tar.zst
 ENDSSH
@@ -552,6 +594,15 @@ function generate_checksums() {
     sudo chown smoothie:smoothie /tmp/checksums.txt
 ENDSSH
   success "[☑️] Checksum generated: /tmp/checksums.txt"
+}
+
+function validate_checksums() {
+  # info "[⏳] Validating checksums on destination..."
+  # # ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "cd /tmp && md5sum -c checksums.txt" || {
+  # #   error "Checksum validation failed"
+  # #   return 1
+  # # }
+  success "[☑️] Checksums validated"
 }
 
 function transfer_to_destination() {
@@ -630,15 +681,6 @@ function transfer_via_jumpbox() {
     error "Failed to push to destination"
     return 1
   }
-}
-
-function validate_checksums() {
-  # info "[⏳] Validating checksums on destination..."
-  # # ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "cd /tmp && md5sum -c checksums.txt" || {
-  # #   error "Checksum validation failed"
-  # #   return 1
-  # # }
-  success "[☑️] Checksums validated"
 }
 
 function restore_globals() {
@@ -873,29 +915,19 @@ function startdw_dest() {
   }
 }
 
-function update_host_key() {
-  echo
-  info "[⏳] Updating host key for ${SOURCE_HOST}..."
-  local source_hostname
-  source_hostname=$(grep -i "${SOURCE_HOST}" /etc/hosts | awk '{print $2}')
-  sudo /home/smoothie/update_known_hosts.sh $source_hostname || {
-    error "Failed to update host key for ${source_hostname}"
-    return 1
-  }
-
-  success "[☑️] Updated host key for $source_hostname"
-}
-
 function restore_server_files() {
   echo
   info "[⏳] Moving source files to final locations on destination..."
 
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
-    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable ${SERVER_FILES_BACKUP_DIR}/etc/default/jetty /etc/default/
-    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable ${SERVER_FILES_BACKUP_DIR}/etc/ssh/ /etc/ssh/
-    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable ${SERVER_FILES_BACKUP_DIR}/etc/salt/minion_id /etc/salt/
-    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable ${SERVER_FILES_BACKUP_DIR}/home/ /home/
-    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable ${SERVER_FILES_BACKUP_DIR}/opt/ /opt/
+    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args ${SERVER_FILES_BACKUP_DIR}/etc/default/jetty /etc/default/
+    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args ${SERVER_FILES_BACKUP_DIR}/etc/ssh/ /etc/ssh/
+    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args ${SERVER_FILES_BACKUP_DIR}/etc/salt/minion_id /etc/salt/
+    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args ${SERVER_FILES_BACKUP_DIR}/home/ /home/
+    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args ${SERVER_FILES_BACKUP_DIR}/opt/ /opt/
+
+    # Restore bi_cube files
+    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args ${SERVER_FILES_BACKUP_DIR}/etc/profile.d/ /etc/profile.d/
 ENDSSH
 
   if [[ $? -ne 0 ]]; then
@@ -922,84 +954,51 @@ function rename_smoothie_folder() {
   fi
 }
 
-function setup_bi_cube() {
-  info "Checking if bi_cube setup is required..."
-
-  # Check if /etc/profile.d/ibp.sh exists on source
-  if ! ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" "test -f /etc/profile.d/ibp.sh"; then
-    warn "/etc/profile.d/ibp.sh does not exist on source - skipping bi_cube setup"
+function configure_bi_cube_on_dest() {
+  if [[ "${BI_CUBE_DETECTED}" != "true" ]]; then
+    info "[ℹ️] bi_cube not detected - skipping setup"
     return 0
   fi
-
-  success "/etc/profile.d/ibp.sh found on source - proceeding with bi_cube setup"
-
-  info "[⏳] Backing up bi_cube files from source..."
-  rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable --relative /home/smoothie/bi_cube* "${SERVER_FILES_BACKUP_DIR}/" || {
-    warn "Failed to copy bi_cube files from /home/smoothie/ (may not exist)"
-  }
-
-  rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable --relative /etc/profile.d/ibp* "${SERVER_FILES_BACKUP_DIR}/" || {
-    warn "Failed to copy ibp files from /etc/profile.d/ (may not exist)"
-  }
-
-  success "[☑️] bi_cube files backed up on source"
-
-  info "[⏳] Setting ownership on destination..."
-  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
-    # Set ownership for ibp files
-    if ls /tmp/pg_migration/server_files/etc/profile.d/ibp* 1> /dev/null 2>&1; then
-      sudo chown smoothie:smoothie /tmp/pg_migration/server_files/etc/profile.d/ibp*
-    fi
-
-    # Set ownership for bi_cube files
-    if ls /tmp/pg_migration/server_files/home/smoothie/bi_cube* 1> /dev/null 2>&1; then
-      sudo chown smoothie:smoothie /tmp/pg_migration/server_files/home/smoothie/bi_cube*
-    fi
-
-    # Set specific ownership for shell scripts
-    for script in bi_cube_fetch_logs_connections.sh bi_cube_fetch_logs_queries.sh bi_cube_whitelist_ips.sh; do
-      if [[ -f "/tmp/pg_migration/server_files/home/smoothie/${script}" ]]; then
-        sudo chown root:smoothie "/tmp/pg_migration/server_files/home/smoothie/${script}"
-      fi
-    done
+  
+  echo
+  info "[⏳] Configuring bi_cube on destination..."
+  
+  if true; then
+    info " - bi_cube: setup is required"
+    info " - bi_cube: setting ownership"
+    ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
+      sudo chown -R smoothie:smoothie /tmp/pg_migration/server_files/etc/profile.d/ibp*
+      sudo chown -R smoothie:smoothie /tmp/pg_migration/server_files/home/smoothie/bi_cube*
+      for script in bi_cube_fetch_logs_connections.sh bi_cube_fetch_logs_queries.sh bi_cube_whitelist_ips.sh; do
+        if [[ -f "/tmp/pg_migration/server_files/home/smoothie/${script}" ]]; then
+          sudo chown root:smoothie "/tmp/pg_migration/server_files/home/smoothie/${script}"
+        fi
+      done
 ENDSSH
+    success " - bi_cube: ownership successfully set"
 
-  if [[ $? -ne 0 ]]; then
-    error "Failed to set ownership on destination"
-    return 1
-  fi
+    info "[⏳] Cleaning up old bi_cube installation..."
+    ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo rm -rf /opt/bi_cube_ip_whitelist/{bin,lib}" || {
+      warn "[⚠️] Failed to remove old bi_cube directories (may not exist)"
+    }
 
-  success "[☑️] Ownership set successfully"
-
-  info "[⏳] Cleaning up old bi_cube installation..."
-  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo rm -rf /opt/bi_cube_ip_whitelist/{bin,lib}" || {
-    warn "Failed to remove old bi_cube directories (may not exist)"
-  }
-
-  info "[⏳] Installing python3-venv on destination..."
-  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "sudo apt install -y python3-venv" || {
-    error "Failed to install python3-venv"
-    return 1
-  }
-
-  success "[☑️] python3-venv installed"
-
-  info "[⏳] Creating Python virtual environment..."
-  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
-    # Create venv
-    sudo python3 -m venv /opt/bi_cube_ip_whitelist/ || exit 1
-
-    # Install packages
-    sudo -u root "/opt/bi_cube_ip_whitelist/bin/pip install boto3 mysql-connector-python psycopg2-binary privatebinapi" || exit 1
+    info "[⏳] Installing python3-venv for bi_cube"
+    ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
+      sudo apt install -y python3-venv
+      python3 -m venv /opt/bi_cube_ip_whitelist/ || exit 1
+      source /opt/bi_cube_ip_whitelist/bin/activate
+      pip install boto3 mysql-connector-python psycopg2-binary privatebinapi || exit 1
 ENDSSH
-
-  if [[ $? -ne 0 ]]; then
-    error "Failed to create virtual environment or install packages"
-    return 1
+    if [[ $? -ne 0 ]]; then
+      error "Failed to create virtual environment or install packages"
+      return 1
+    fi
+    success "[☑️] Python virtual environment created and packages installed"
+    success "[☑️] bi_cube setup completed successfully"
+  else
+    info " - bi_cube: setup is not required"
+    return 0
   fi
-
-  success "[☑️] Python virtual environment created and packages installed"
-  success "[☑️] bi_cube setup completed successfully"
 }
 
 function sync_timezone() {
@@ -1135,6 +1134,37 @@ ENDSSH
   info "Note: Changes will take effect on next SSH login"
 }
 
+function apply_mambo_cron_schedules() {
+  echo
+  info "[⏳] Applying mambo crontab schedules..."
+
+  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
+    sudo -u smoothie /opt/smoothie11/mambo/UpdateSchedule.sh
+    echo
+    sudo -u smoothie crontab -l
+ENDSSH
+
+  if [[ $? -ne 0 ]]; then
+    warn "[⚠️] Failed to apply mambo crontab schedules"
+    return 0
+  fi
+
+  success "[☑️] Crontab schedules applied"
+}
+
+function update_host_key() {
+  echo
+  info "[⏳] Updating host key for ${SOURCE_HOST}..."
+  local source_hostname
+  source_hostname=$(grep -i "${SOURCE_HOST}" /etc/hosts | awk '{print $2}')
+  sudo /home/smoothie/update_known_hosts.sh $source_hostname || {
+    error "Failed to update host key for ${source_hostname}"
+    return 1
+  }
+
+  success "[☑️] Updated host key for $source_hostname"
+}
+
 function final_cleanup() {
   echo
   info "[⏳] Performing final cleanup..."
@@ -1263,12 +1293,15 @@ function full_migration() {
   restore_server_files || return 1
   show_execution_time "${start_time}" || return 1
 
-  # TODO: setup_bi_cube || return 1
-
+  start_time=$(date +%s)
+  configure_bi_cube_on_dest || return 1
+  show_execution_time "${start_time}" || return 1
+  
   reseed_dest_hostkey_to_knownhosts_file || return 1
   sync_timezone || return 1
   update_hosts_file_dest || return 1
   update_bashrc_ps1_dest || return 1
+  apply_mambo_cron_schedules || return 1
   display_summary_dest || return 1
   update_host_key || return 1
   final_cleanup || return 1
@@ -1306,8 +1339,10 @@ function show_menu() {
   printf '%b\n' "${BOLD_GREEN}14)${RESET} Sync Timezone (DEST)"
   printf '%b\n' "${BOLD_GREEN}15)${RESET} Update /etc/hosts (DEST)"
   printf '%b\n' "${BOLD_GREEN}16)${RESET} Update .bashrc PS1 Prompt (DEST)"
-  printf '%b\n' "${BOLD_GREEN}17)${RESET} Final Cleanup (SOURCE+DEST+JUMPBOX)"
-  printf '%b\n' "${BOLD_GREEN}18)${RESET} Quit"
+  printf '%b\n' "${BOLD_GREEN}17)${RESET} Apply Mambo Cron Schedules (DEST)"
+  printf '%b\n' "${BOLD_GREEN}18)${RESET} Check bi_cube Detection (SOURCE)"
+  printf '%b\n' "${BOLD_GREEN}19)${RESET} Final Cleanup (SOURCE+DEST+JUMPBOX)"
+  printf '%b\n' "${BOLD_GREEN}20)${RESET} Quit"
   printf '\n'
   printf '%b' "${BOLD_YELLOW}Select option: ${RESET}"
 }
@@ -1383,7 +1418,7 @@ function main() {
         read -p "Press Enter to continue..."
         ;;
       13)
-        setup_bi_cube
+        configure_bi_cube_on_dest
         show_execution_time "${start_time}"
         read -p "Press Enter to continue..."
         ;;
@@ -1403,11 +1438,25 @@ function main() {
         read -p "Press Enter to continue..."
         ;;
       17)
+        apply_mambo_cron_schedules
+        show_execution_time "${start_time}"
+        read -p "Press Enter to continue..."
+        ;;
+      18)
+        validate_environment
+        if [[ "${BI_CUBE_DETECTED}" == "true" ]]; then
+          success "[☑️] bi_cube is detected on source"
+        else
+          info "[ℹ️] bi_cube is NOT detected on source"
+        fi
+        read -p "Press Enter to continue..."
+        ;;
+      19)
         final_cleanup
         show_execution_time "${start_time}"
         read -p "Press Enter to continue..."
         ;;
-      18|q)
+      20|q)
         info "Exiting..."
         exit 0
         ;;
