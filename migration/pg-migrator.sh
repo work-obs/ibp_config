@@ -9,6 +9,10 @@
 # Updated : Thu 31 October 2025
 #
 
+# Source utility libraries
+SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SOURCE_DIR}/lib/rsync_utils.sh"
+
 # Colour constants
 readonly BOLD_RED='\033[1;31m' BOLD_GREEN='\033[1;32m' BOLD_YELLOW='\033[1;33m'
 readonly BOLD_BLUE='\033[1;34m' BOLD_CYAN='\033[1;36m' BOLD_WHITE='\033[1;37m'
@@ -51,6 +55,11 @@ function error() {
   printf '%b[%s]: %s%b\n' "${BOLD_RED}" "$(date +'%Y-%m-%d %H:%M:%S')" "$*" "${RESET}" >&2
 }
 
+#######################################
+# Interactively prompts for required migration configuration if not set via environment variables.
+# Returns:
+#   0 on success, 1 if required values are missing
+#######################################
 function prompt_required_config() {
   if [[ -z "${SOURCE_HOST}" ]]; then
     read -p "Source Host: " SOURCE_HOST
@@ -232,6 +241,12 @@ function display_summary_dest() {
   }
 }
 
+#######################################
+# Dynamically calculates and applies PostgreSQL performance settings on source server
+# based on available CPU cores and RAM to optimize dump operations.
+# Returns:
+#   0 on success, 1 on failure
+#######################################
 function set_maintenance_settings_source() {
   echo
   info "[⏳] Setting temporary maintenance settings on source..."
@@ -298,6 +313,12 @@ ENDSSH
   success "[☑️] Maintenance settings applied on source"
 }
 
+#######################################
+# Dynamically calculates and applies PostgreSQL performance settings on destination server
+# based on available CPU cores and RAM to optimize restore operations.
+# Returns:
+#   0 on success, 1 on failure
+#######################################
 function set_maintenance_settings_dest() {
   echo
   info "[⏳] Setting temporary maintenance settings on destination..."
@@ -430,6 +451,12 @@ function detect_bi_cube() {
   fi
 }
 
+#######################################
+# Dumps all user databases from source server in parallel using pg_dump with directory format.
+# Automatically calculates optimal parallelism based on CPU cores and executes dumps concurrently.
+# Returns:
+#   0 on success, 1 if any database dump fails
+#######################################
 function dump_databases() {
   display_summary
 
@@ -507,6 +534,12 @@ ENDSSH
   success "[☑️] All databases dumped successfully"
 }
 
+#######################################
+# Creates compressed tar archive of database dumps and server configuration files using zstd.
+# Conditionally includes bi_cube files if detected, applies path transformations for proper extraction.
+# Returns:
+#   0 on success
+#######################################
 function create_archive() {
   info "[⏳] Creating TAR FILE on source..."
   
@@ -693,6 +726,12 @@ function restore_globals() {
   success "[☑️] Global objects restored"
 }
 
+#######################################
+# Restores all databases on destination server in parallel using pg_restore.
+# Drops existing databases, recreates them, and restores with optimal parallelism based on CPU cores.
+# Returns:
+#   0 on success, 1 if any database restore fails
+#######################################
 function restore_databases() {
   local databases
   databases=$(ssh -q "${DEST_SSH_USER}@${DEST_HOST}" "ls -d ${BACKUP_DIR}/*.dump 2>/dev/null" | xargs -n1 basename | sed 's/.dump$//')
@@ -915,20 +954,19 @@ function startdw_dest() {
   }
 }
 
-function restore_server_files() {
-  echo
+# Restores server configuration files from the backup archive to their original locations 
+# on the destination server, including jetty config, SSH host keys, salt minion ID,
+# smoothie scripts and bi_cube files if present
+function restore_server_files() { 
   info "[⏳] Moving source files to final locations on destination..."
 
-  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
-    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args ${SERVER_FILES_BACKUP_DIR}/etc/default/jetty /etc/default/
-    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args ${SERVER_FILES_BACKUP_DIR}/etc/ssh/ /etc/ssh/
-    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args ${SERVER_FILES_BACKUP_DIR}/etc/salt/minion_id /etc/salt/
-    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args ${SERVER_FILES_BACKUP_DIR}/home/ /home/
-    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args ${SERVER_FILES_BACKUP_DIR}/opt/ /opt/
-
-    # Restore bi_cube files
-    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args ${SERVER_FILES_BACKUP_DIR}/etc/profile.d/ /etc/profile.d/
-ENDSSH
+  rsync_remote_batch "${DEST_SSH_USER}" "${DEST_HOST}" "root" \
+    "${SERVER_FILES_BACKUP_DIR}/etc/default/jetty:/etc/default/" \
+    "${SERVER_FILES_BACKUP_DIR}/etc/ssh/:/etc/ssh/" \
+    "${SERVER_FILES_BACKUP_DIR}/etc/salt/minion_id:/etc/salt/" \
+    "${SERVER_FILES_BACKUP_DIR}/home/:/home/" \
+    "${SERVER_FILES_BACKUP_DIR}/opt/:/opt/" \
+    "${SERVER_FILES_BACKUP_DIR}/etc/profile.d/:/etc/profile.d/"
 
   if [[ $? -ne 0 ]]; then
     warn "[⚠️] Failed to move server files to final locations on destination"
@@ -954,6 +992,12 @@ function rename_smoothie_folder() {
   fi
 }
 
+#######################################
+# Configures bi_cube environment on destination server including file ownership,
+# Python virtual environment creation, and required package installation.
+# Returns:
+#   0 on success, 1 if virtual environment setup fails
+#######################################
 function configure_bi_cube_on_dest() {
   if [[ "${BI_CUBE_DETECTED}" != "true" ]]; then
     info "[ℹ️] bi_cube not detected - skipping setup"
@@ -1001,6 +1045,12 @@ ENDSSH
   fi
 }
 
+#######################################
+# Synchronizes timezone configuration from source to destination server.
+# Attempts multiple methods to read timezone and verifies successful application.
+# Returns:
+#   0 on success, 1 if timezone cannot be determined or set
+#######################################
 function sync_timezone() {
   echo
   info "[⏳] Synchronizing timezone from source to destination..."
@@ -1093,6 +1143,12 @@ ENDSSH
   success "[☑️] Successfully updated /etc/hosts on destination"
 }
 
+#######################################
+# Updates bash PS1 prompt in .bashrc on destination to reflect the source hostname.
+# Searches for basearm pattern and replaces with actual hostname.
+# Returns:
+#   0 on success or if pattern not found
+#######################################
 function update_bashrc_ps1_dest() {
   echo
   info "[⏳] Updating PS1 prompt in /home/smoothie/.bashrc on destination..."
@@ -1228,6 +1284,12 @@ function show_execution_time() {
   printf '%b' "${BOLD_CYAN}═══════════════════════════════════════════════════════════${RESET}\n"
 }
 
+#######################################
+# Orchestrates complete end-to-end migration workflow from source to destination.
+# Executes all migration phases with timing metrics for each stage.
+# Returns:
+#   0 on success, 1 if any step fails
+#######################################
 function full_migration() {
   info "[🚀] Starting full migration process..."
   local start_time
