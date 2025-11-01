@@ -436,7 +436,10 @@ function dump_databases() {
 
     cpu_cores=\$(nproc)
     half_cores=\$((cpu_cores / 2))
-    parallel_jobs=\${half_cores}
+    parallel_jobs=\$((half_cores / 2))
+    if (( parallel_jobs < 2 )); then
+      parallel_jobs=2
+    fi    
     
     echo "INFO: Using \${parallel_jobs} parallel jobs per database dump"
     echo
@@ -575,6 +578,47 @@ ENDSSH
 function transfer_via_jumpbox() {
   info "  [-] COPYING: SOURCE ---> JUMPBOX"
   mkdir -p /tmp/pg_transfer
+
+  # TODO: NB => USE THIS INSTEAD:
+  # SOURCE_HOST=xylem
+  # DEST_HOST=172.20.21.152 (basearm_u22)
+  #
+  # ssh "$SOURCE_SSH_USER@$SOURCE_HOST" "cd /tmp && sudo -u root tar cf - pg_migration/dumps/ --exclude='opt/fluent-bit' -C / opt/ -C / etc/default/ jetty -C / home/smoothie/ Scripts/ -C / etc/ssh/ ssh_host* -C / etc/salt/ minion_id | zstd -T0 -3" | ssh "$DEST_SSH_USER@$DEST_HOST" "cat > /tmp/pg_dumps.tar.zst"
+  #
+  # ## Benefits Including Disk & IOPS Considerations
+  #
+  # ### JUMPBOX (Minimal Impact)
+  # Disk Space: 0 bytes used
+  # • Data streams through memory buffers only
+  # • No files written to disk
+  #
+  # IOPS: ~0 disk operations
+  # • Only SSH process memory and network I/O
+  # • No disk read/write operations
+  #
+  # ### SOURCE_HOST (Optimal Efficiency)
+  # Disk Space: 0 bytes additional storage
+  # • No intermediate tar.zst file created
+  # • Only reads existing 18.44 GB of backup files
+  #
+  # IOPS: Read-only operations
+  # • Sequential reads of backup files (~350 files)
+  # • No write IOPS consumed
+  # • Saves ~18.44 GB of write IOPS + subsequent read IOPS if file was created locally
+  #
+  # Estimated IOPS saved:
+  # • Avoids writing compressed archive: ~4,000-6,000 write IOPS (for ~5-7 GB compressed)
+  # • Avoids reading it back for transfer: ~4,000-6,000 read IOPS
+  # • **Total: ~8,000-12,000 IOPS saved**
+  #
+  # ### DEST_HOST (Write-Only)
+  # Disk Space: Only final compressed file (~5-7 GB estimated)
+  # • Single compressed archive written
+  # • No intermediate uncompressed data
+  #
+  # IOPS: Write-only operations
+  # • Sequential writes of compressed stream
+  # • ~4,000-6,000 write IOPS for final file
 
   rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args --human-readable -e "ssh -q" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/pg_dumps.tar.zst" "${SOURCE_SSH_USER}@${SOURCE_HOST}:/tmp/checksums.txt" /tmp/pg_transfer/ || {
     error "Failed to pull from source"
