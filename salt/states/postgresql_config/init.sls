@@ -69,7 +69,7 @@ backup_postgresql_conf:
     'wal_keep_size': '1GB',
     'checkpoint_completion_target': '0.9',
     'checkpoint_timeout': '15min',
-    'max_connections': '200',
+    'max_connections': '500',
     'superuser_reserved_connections': '3',
     'logging_collector': 'on',
     'log_directory': "'/var/log/postgresql'",
