@@ -59,7 +59,7 @@
     - { key: "wal_keep_size", value: "1GB" }
     - { key: "checkpoint_completion_target", value: "0.9" }
     - { key: "checkpoint_timeout", value: "15min" }
-    - { key: "max_connections", value: "200" }
+    - { key: "max_connections", value: "500" }
     - { key: "superuser_reserved_connections", value: "3" }
     - { key: "logging_collector", value: "on" }
     - { key: "log_directory", value: "'/var/log/postgresql'" }

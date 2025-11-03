@@ -83,7 +83,7 @@ configure_postgresql_conf() {
     set_pg_config "checkpoint_timeout" "15min"
 
     # Connection Settings
-    set_pg_config "max_connections" "200"
+    set_pg_config "max_connections" "500"
     set_pg_config "superuser_reserved_connections" "3"
 
     # Logging Settings
