@@ -8,3 +8,5 @@ migration/logs
 migration/temp.html
 .gitignore
 migration/output.pdf
+.DS_Store
+

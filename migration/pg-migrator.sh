@@ -1234,8 +1234,8 @@ function final_cleanup() {
   info "  [-] Cleaning up SOURCE_HOST: ${SOURCE_HOST}"
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
-  # TODO: Uncomment the commented statements below
-    # sudo rm -rf /tmp/pg_migration 2>/dev/null
+    # TODO: Uncomment the commented statements below
+    sudo rm -rf /tmp/pg_migration 2>/dev/null
     sudo rm -f /tmp/pg_dumps.tar.zst 2>/dev/null
     sudo rm -f /tmp/checksums.txt 2>/dev/null
 ENDSSH
@@ -1251,7 +1251,7 @@ ENDSSH
     # sudo rm -rf /opt/smoothie11_old 2>/dev/null
     sudo rm -rf /tmp/etc 2>/dev/null
     sudo rm -rf /tmp/home 2>/dev/null
-    # sudo rm -rf /tmp/pg_migration 2>/dev/null
+    sudo rm -rf /tmp/pg_migration 2>/dev/null
     sudo rm -f /tmp/pg_dumps.tar.zst 2>/dev/null
     sudo rm -f /tmp/checksums.txt 2>/dev/null
 ENDSSH
