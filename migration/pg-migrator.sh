@@ -960,13 +960,20 @@ function startdw_dest() {
 function restore_server_files() { 
   info "[⏳] Moving source files to final locations on destination..."
 
-  rsync_remote_batch "${DEST_SSH_USER}" "${DEST_HOST}" "root" \
-    "${SERVER_FILES_BACKUP_DIR}/etc/default/jetty:/etc/default/" \
-    "${SERVER_FILES_BACKUP_DIR}/etc/ssh/:/etc/ssh/" \
-    "${SERVER_FILES_BACKUP_DIR}/etc/salt/minion_id:/etc/salt/" \
-    "${SERVER_FILES_BACKUP_DIR}/home/:/home/" \
-    "${SERVER_FILES_BACKUP_DIR}/opt/:/opt/" \
-    "${SERVER_FILES_BACKUP_DIR}/etc/profile.d/:/etc/profile.d/"
+  ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
+    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args ${SERVER_FILES_BACKUP_DIR}/etc/default/jetty /etc/default/
+    
+    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args ${SERVER_FILES_BACKUP_DIR}/etc/ssh/ /etc/ssh/
+    
+    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args ${SERVER_FILES_BACKUP_DIR}/etc/salt/minion_id /etc/salt/
+    
+    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args ${SERVER_FILES_BACKUP_DIR}/home/ /home/
+    
+    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args ${SERVER_FILES_BACKUP_DIR}/opt/ /opt/
+
+    # Restore bi_cube files
+    sudo -u root rsync -a -q -A -X -H --perms --links --times --recursive --no-compress --inplace --whole-file --protect-args ${SERVER_FILES_BACKUP_DIR}/etc/profile.d/ /etc/profile.d/
+ENDSSH
 
   if [[ $? -ne 0 ]]; then
     warn "[⚠️] Failed to move server files to final locations on destination"
@@ -1227,7 +1234,8 @@ function final_cleanup() {
   info "  [-] Cleaning up SOURCE_HOST: ${SOURCE_HOST}"
 
   ssh -q "${SOURCE_SSH_USER}@${SOURCE_HOST}" bash <<ENDSSH
-    sudo rm -rf /tmp/pg_migration 2>/dev/null
+  # TODO: Uncomment the commented statements below
+    # sudo rm -rf /tmp/pg_migration 2>/dev/null
     sudo rm -f /tmp/pg_dumps.tar.zst 2>/dev/null
     sudo rm -f /tmp/checksums.txt 2>/dev/null
 ENDSSH
@@ -1239,10 +1247,11 @@ ENDSSH
 
   info "  [-] Cleaning up DEST_HOST: ${DEST_HOST}"
   ssh -q "${DEST_SSH_USER}@${DEST_HOST}" bash <<ENDSSH
-    sudo rm -rf /opt/smoothie11_old 2>/dev/null
+    # TODO: Uncomment the commented statements below
+    # sudo rm -rf /opt/smoothie11_old 2>/dev/null
     sudo rm -rf /tmp/etc 2>/dev/null
     sudo rm -rf /tmp/home 2>/dev/null
-    sudo rm -rf /tmp/pg_migration 2>/dev/null
+    # sudo rm -rf /tmp/pg_migration 2>/dev/null
     sudo rm -f /tmp/pg_dumps.tar.zst 2>/dev/null
     sudo rm -f /tmp/checksums.txt 2>/dev/null
 ENDSSH
