@@ -8,3 +8,8 @@ migration/logs
 migration/temp.html
 .gitignore
 migration/output.pdf
+<<<<<<< HEAD
+=======
+.DS_Store
+
+>>>>>>> edit
